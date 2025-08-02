@@ -1,0 +1,130 @@
+name: tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install
+      - run: uv run mypy
+        env:
+          FORCE_COLOR: 1
+  tests-on-linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        python:
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Set up Python
+        run: uv python install
+
+      - run: uv run pytest
+        env:
+          FORCE_COLOR: 1
+      - run: uv run coveralls
+        env:
+          COVERALLS_PARALLEL: 'true'
+          COVERALLS_SERVICE_NAME: github
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  tests-on-macos:
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        python:
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Set up Python
+        run: uv python install
+
+      - run: uv run pytest
+        env:
+          FORCE_COLOR: 1
+      - run: uv run coveralls
+        env:
+          COVERALLS_PARALLEL: 'true'
+          COVERALLS_SERVICE_NAME: github
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  tests-on-windows:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        python:
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Set up Python
+        run: uv python install
+
+      - run: uv run pytest
+        env:
+          FORCE_COLOR: 1
+      - run: uv run coveralls
+        env:
+          COVERALLS_PARALLEL: 'true'
+          COVERALLS_SERVICE_NAME: github
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finish:
+    needs:
+      - tests-on-linux
+      - tests-on-macos
+      - tests-on-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.github_token }}
+          parallel-finished: true

@@ -8,7 +8,6 @@ packages = [{ include = "aiothreads" }]
 dependencies = []
 author = "Dmitry Orlov <orlovdl@icloud.com>"
 license = "MIT"
-homepage = "https://github.com/aiokitchen/aiothreads"
 classifiers = [
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
@@ -33,6 +32,12 @@ classifiers = [
     "Topic :: Software Development",
     "Typing :: Typed",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/mosquito/aiothreads"
+"Source" = "https://github.com/mosquito/aiothreads/"
+"Issues" = "https://github.com/mosquito/aiothreads/issues"
+"Documentation" = "https://github.com/mosquito/aiothreads"
 
 [build-system]
 requires = ["hatchling"]

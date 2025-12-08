@@ -5,7 +5,7 @@ import threading
 import pytest
 from async_timeout import timeout
 
-from aiothreads import ChannelClosed, FromThreadChannel, threaded, threaded_iterable, threaded_iterable_separate
+from aiothreads import ChannelClosed, ChannelTimeout, FromThreadChannel, threaded, threaded_iterable, threaded_iterable_separate
 
 gen_decos = (threaded_iterable, threaded_iterable_separate)
 
@@ -47,6 +47,48 @@ async def test_from_thread_channel_close():
     asyncio.get_running_loop().call_soon(channel.put, 1)
 
     assert await channel.get() == 1
+
+
+async def test_from_thread_channel_timeout():
+    """Test channel timeout functionality."""
+    # Test with default timeout (0 = disabled)
+    channel = FromThreadChannel(maxsize=1)
+    channel.put("data")
+    assert await channel.get() == "data"
+
+    # Test with timeout parameter on get()
+    channel = FromThreadChannel(maxsize=1)
+    with pytest.raises(ChannelTimeout):
+        await channel.get(timeout=0.1)
+
+    # Test with default timeout set in constructor
+    channel = FromThreadChannel(maxsize=1, timeout=0.1)
+    with pytest.raises(ChannelTimeout):
+        await channel.get()
+
+    # Test that timeout=0 on get() overrides default timeout (disables it)
+    # This should NOT timeout because we're using asyncio.wait_for externally
+    channel = FromThreadChannel(maxsize=1, timeout=0.1)
+    channel.put("data")
+    result = await channel.get(timeout=0)  # timeout=0 means no timeout
+    assert result == "data"
+
+
+async def test_from_thread_channel_timeout_with_data(threaded_decorator):
+    """Test that timeout works correctly when data arrives in time."""
+    channel = FromThreadChannel(maxsize=1, timeout=5)
+
+    @threaded_decorator
+    def in_thread():
+        import time
+        time.sleep(0.1)
+        channel.put("delayed_data")
+
+    in_thread()
+
+    # Data should arrive before timeout
+    result = await channel.get()
+    assert result == "delayed_data"
 
 
 @pytest.fixture(params=gen_decos)

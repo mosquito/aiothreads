@@ -5,7 +5,6 @@ from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
 from queue import Queue
-from time import time
 from types import TracebackType
 from typing import Any, AsyncIterator, Awaitable, Callable, Deque, Generator, Generic, NoReturn, Optional, Type, Union
 from weakref import finalize
@@ -14,6 +13,11 @@ from .types import P, T
 
 
 class ChannelClosed(RuntimeError):
+    pass
+
+
+class ChannelTimeout(asyncio.TimeoutError):
+    """Raised when a channel operation times out."""
     pass
 
 
@@ -61,22 +65,48 @@ def make_queue(max_size: int = 0) -> QueueWrapperBase:
 
 
 class FromThreadChannel:
-    SLEEP_LOW_THRESHOLD = 0.0001
-    SLEEP_DIFFERENCE_DIVIDER = 10
+    """
+    A thread-safe channel for passing data from threads to async code.
 
-    __slots__ = ("queue", "__closed", "__last_received_item")
+    Uses asyncio.Event for efficient waiting instead of polling, which:
+    - Eliminates CPU-wasting busy loops
+    - Provides immediate wake-up when data is available
+    - Supports optional timeout for bounded waiting
 
-    def __init__(self, maxsize: int = 0):
+    Args:
+        maxsize: Maximum queue size (0 = unbounded)
+        timeout: Default timeout in seconds for get operations (0 = no timeout)
+    """
+
+    __slots__ = ("queue", "_closed", "_data_event", "_loop", "_timeout")
+
+    def __init__(self, maxsize: int = 0, timeout: float = 0):
         self.queue: QueueWrapperBase = make_queue(max_size=maxsize)
-        self.__closed = False
-        self.__last_received_item: float = time()
+        self._closed = False
+        self._data_event: Optional[asyncio.Event] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._timeout = timeout
+
+    def _get_event(self) -> asyncio.Event:
+        """Get or create the asyncio.Event, ensuring it's bound to the right loop."""
+        if self._data_event is None:
+            self._loop = asyncio.get_running_loop()
+            self._data_event = asyncio.Event()
+        return self._data_event
+
+    def _signal_data_available(self) -> None:
+        """Signal that data is available. Thread-safe."""
+        if self._loop is not None and self._data_event is not None:
+            self._loop.call_soon_threadsafe(self._data_event.set)
 
     def close(self) -> None:
-        self.__closed = True
+        self._closed = True
+        # Wake up any waiters so they can see the channel is closed
+        self._signal_data_available()
 
     @property
     def is_closed(self) -> bool:
-        return self.__closed
+        return self._closed
 
     def __enter__(self) -> "FromThreadChannel":
         return self
@@ -88,41 +118,56 @@ class FromThreadChannel:
         self.close()
 
     def put(self, item: Any) -> None:
+        """Put an item into the channel. Thread-safe."""
         if self.is_closed:
             raise ChannelClosed
 
         self.queue.put(item)
-        self.__last_received_item = time()
+        self._signal_data_available()
 
-    def _compute_sleep_time(self) -> Union[float, int]:
-        if self.__last_received_item < 0:
-            return 0
+    async def get(self, timeout: Optional[float] = None) -> Any:
+        """
+        Get an item from the channel.
 
-        delta = time() - self.__last_received_item
+        Args:
+            timeout: Timeout in seconds. None uses default, 0 disables timeout.
 
-        if delta > 1:
-            return 1
+        Raises:
+            ChannelClosed: If the channel is closed and empty.
+            ChannelTimeout: If timeout is exceeded.
+        """
+        effective_timeout = timeout if timeout is not None else self._timeout
+        event = self._get_event()
 
-        sleep_time = delta / self.SLEEP_DIFFERENCE_DIVIDER
-
-        if sleep_time < self.SLEEP_LOW_THRESHOLD:
-            return 0
-        return sleep_time
-
-    def __await__(self) -> Any:
         while True:
             try:
-                res = self.queue.get()
-                return res
+                result = self.queue.get()
+                return result
             except QueueEmpty:
                 if self.is_closed:
                     raise ChannelClosed
 
-                sleep_time = self._compute_sleep_time()
-                yield from asyncio.sleep(sleep_time).__await__()
+                # Clear event before waiting (in case it was set)
+                event.clear()
 
-    async def get(self) -> Any:
-        return await self
+                # Double-check queue after clearing event to avoid race condition
+                try:
+                    result = self.queue.get()
+                    return result
+                except QueueEmpty:
+                    pass
+
+                # Wait for data with optional timeout
+                if effective_timeout > 0:
+                    try:
+                        await asyncio.wait_for(event.wait(), timeout=effective_timeout)
+                    except asyncio.TimeoutError:
+                        raise ChannelTimeout(f"Channel get timed out after {effective_timeout}s")
+                else:
+                    await event.wait()
+
+    def __await__(self) -> Any:
+        return self.get().__await__()
 
 
 class IteratorWrapper(Generic[P, T], AsyncIterator):

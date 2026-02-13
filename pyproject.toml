@@ -5,6 +5,20 @@ description = "glue between async and thread worlds"
 readme = "README.md"
 requires-python = ">=3.10"
 packages = [{ include = "aiothreads" }]
+keywords = [
+    "asyncio",
+    "threads",
+    "threading",
+    "async",
+    "await",
+    "concurrent",
+    "generator",
+    "iterator",
+    "decorator",
+    "executor",
+    "backpressure",
+    "context-variables",
+]
 dependencies = []
 author = "Dmitry Orlov <orlovdl@icloud.com>"
 license = "Apache-2.0"

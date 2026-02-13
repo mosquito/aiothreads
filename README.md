@@ -1,5 +1,11 @@
 # aiothreads Documentation
 
+[![PyPI version](https://img.shields.io/pypi/v/aiothreads.svg)](https://pypi.org/project/aiothreads/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aiothreads.svg)](https://pypi.org/project/aiothreads/)
+[![License](https://img.shields.io/pypi/l/aiothreads.svg)](https://pypi.org/project/aiothreads/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/aiothreads.svg)](https://pypi.org/project/aiothreads/)
+[![Coverage Status](https://coveralls.io/repos/github/mosquito/aiothreads/badge.svg?branch=master)](https://coveralls.io/github/mosquito/aiothreads?branch=master)
+
 ## Overview
 
 `aiothreads` is a Python library that provides seamless integration between asyncio and thread-based execution. It

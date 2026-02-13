@@ -1,5 +1,5 @@
 from .coroutine_waiter import sync_await, sync_wait_coroutine, wait_coroutine
-from .iterator_wrapper import ChannelClosed, FromThreadChannel
+from .iterator_wrapper import ChannelClosed, ChannelTimeout, FromThreadChannel
 from .threaded_iterable import (
     BoundThreadedIterable,
     ThreadedIterable,
@@ -23,6 +23,7 @@ __all__ = (
     "sync_wait_coroutine",
     "wait_coroutine",
     "ChannelClosed",
+    "ChannelTimeout",
     "FromThreadChannel",
     "BoundThreadedIterable",
     "ThreadedIterable",

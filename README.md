@@ -120,7 +120,7 @@ asyncio.run(main())
 |-------------------------------|-------------------------------|--------------------------------------------------|
 | Short I/O operations (< 30s)  | `@threaded`                   | Efficient resource reuse                         |
 | CPU-bound tasks (< 30s)       | `@threaded`                   | Controlled concurrency                           |
-| Blocking pipe/stream reading  | `@threaded_separate`          | Won't block thread pool create a separate thread |
+| Blocking pipe/stream reading  | `@threaded_separate`          | Won't block thread pool, creates a separate thread |
 | Operations that may hang      | `@threaded_separate`          | Isolation from pool                              |
 | Continuous monitoring tasks   | `@threaded_separate`          | Don't monopolize pool workers                    |
 | High-frequency short tasks    | `@threaded`                   | Lower overhead                                   |
@@ -712,19 +712,19 @@ async def async_function():
     return "async result"
 
 
-currnet_loop = None
+current_loop = None
 
 
 def sync_function_for_to_thread():
     # Must get and pass event loop manually
-    return sync_wait_coroutine(currnet_loop, async_function)
+    return sync_wait_coroutine(current_loop, async_function)
 
 
 async def example_with_to_thread():
-    global currnet_loop
+    global current_loop
 
     # Using asyncio.to_thread - requires manual loop setting
-    currnet_loop = asyncio.get_running_loop()
+    current_loop = asyncio.get_running_loop()
     await asyncio.to_thread(sync_function_for_to_thread)
 ```
 
@@ -796,6 +796,58 @@ async def handle_request(user_id, data):
 ```
 
 ## Advanced Usage
+
+### FromThreadChannel with Timeout
+
+The `FromThreadChannel` class provides efficient event-based communication from threads to async code.
+It uses `asyncio.Event` instead of polling for immediate wake-up when data is available.
+
+```python
+import asyncio
+from aiothreads import FromThreadChannel, ChannelClosed, ChannelTimeout, threaded
+
+
+# Basic usage with timeout
+async def example_with_timeout():
+    channel = FromThreadChannel(maxsize=10, timeout=5.0)  # 5 second default timeout
+
+    @threaded
+    def producer():
+        with channel:
+            for i in range(10):
+                channel.put(i)
+
+    producer()
+
+    try:
+        while True:
+            # Uses default timeout of 5 seconds
+            item = await channel.get()
+            print(f"Received: {item}")
+    except ChannelClosed:
+        print("Channel closed")
+    except ChannelTimeout:
+        print("Timeout waiting for data")
+
+
+# Override timeout per-call
+async def example_override_timeout():
+    channel = FromThreadChannel(timeout=10.0)  # Default 10s timeout
+
+    # Use a shorter timeout for this specific call
+    try:
+        item = await channel.get(timeout=1.0)
+    except ChannelTimeout:
+        print("Timed out after 1 second")
+
+    # Disable timeout for this call (wait forever)
+    item = await channel.get(timeout=0)  # 0 = no timeout
+```
+
+**Timeout Behavior:**
+- `timeout=0` (default): No timeout, wait indefinitely
+- `timeout=N`: Wait up to N seconds, then raise `ChannelTimeout`
+- Per-call timeout overrides the default set in constructor
 
 ### Error Handling
 

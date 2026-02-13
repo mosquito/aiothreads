@@ -87,7 +87,7 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
     ) -> "ThreadedIterable[P, T] | BoundThreadedIterable[Any, T]":
         key = instance
         result: Any
-        if key in self.__cache:
+        if key is not None and key in self.__cache:
             return self.__cache[key]
 
         if self.func_type is staticmethod:
@@ -100,7 +100,8 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
         else:
             result = self
 
-        self.__cache[key] = result
+        if key is not None:
+            self.__cache[key] = result
         return result
 
 

@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 from abc import abstractmethod
+from contextlib import suppress
 from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
@@ -252,7 +253,8 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
                     return
                 self.__channel.put((e, True))
             finally:
-                self.loop.call_soon_threadsafe(self.__close_event.set)
+                with suppress(RuntimeError):
+                    self.loop.call_soon_threadsafe(self.__close_event.set)
 
     def close(self) -> Awaitable[None]:
         self.__channel.close()

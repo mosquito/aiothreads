@@ -257,3 +257,44 @@ async def test_threaded_generator_func_raises(iterator_decorator):
         with pytest.raises(RuntimeError):
             async for _ in errored(True):  # NOQA
                 pass
+
+
+def test_call_soon_threadsafe_on_closed_loop():
+    """Test that _in_thread finally block doesn't crash when loop is closed.
+
+    When the event loop shuts down while a producer thread is active,
+    call_soon_threadsafe raises RuntimeError. The finally block in
+    _in_thread must suppress this so __close_event.set doesn't get lost.
+    """
+    import time
+
+    channel = FromThreadChannel(maxsize=0)
+    finished = threading.Event()
+
+    def producer():
+        try:
+            for i in range(100):
+                channel.put(i)
+                time.sleep(0.01)
+        except RuntimeError:
+            pass  # expected: loop is closed
+        finally:
+            finished.set()
+
+    async def _run():
+        loop = asyncio.get_running_loop()
+        channel._loop = loop
+        channel._data_event = asyncio.Event()
+
+        t = threading.Thread(target=producer, daemon=True)
+        t.start()
+
+        # Consume one item to ensure producer is running
+        await channel.get()
+
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_run())
+    loop.close()
+
+    # Producer thread should exit without hanging
+    assert finished.wait(timeout=5), "Producer thread hung"

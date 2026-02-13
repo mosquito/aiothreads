@@ -7,6 +7,7 @@ from async_timeout import timeout
 
 from aiothreads import (
     ChannelClosed,
+    ChannelTimeout,
     FromThreadChannel,
     threaded,
     threaded_iterable,

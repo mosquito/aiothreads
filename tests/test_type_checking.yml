@@ -1,0 +1,254 @@
+# Negative cases: mypy should report errors
+
+- case: threaded_missing_await
+  main: |
+    from aiothreads import threaded
+
+    @threaded
+    def compute(x: int) -> int:
+        return x * 2
+
+    async def main() -> None:
+        x: int = compute(1)  # E: Incompatible types in assignment (expression has type "Awaitable[int]", variable has type "int")  [assignment]  # N: Maybe you forgot to use "await"?
+
+- case: threaded_separate_missing_await
+  main: |
+    from aiothreads import threaded_separate
+
+    @threaded_separate
+    def compute(x: int) -> int:
+        return x * 2
+
+    async def main() -> None:
+        x: int = compute(1)  # E: Incompatible types in assignment (expression has type "Awaitable[int]", variable has type "int")  [assignment]  # N: Maybe you forgot to use "await"?
+
+- case: threaded_iterable_sync_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    @threaded_iterable
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    async def main() -> None:
+        for x in gen():  # E: "IteratorWrapper[[], int]" has no attribute "__iter__"; maybe "__aiter__" or "__aenter__"? (not iterable)  [attr-defined]
+            pass
+
+- case: threaded_iterable_separate_sync_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable_separate
+
+    @threaded_iterable_separate
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    async def main() -> None:
+        for x in gen():  # E: "IteratorWrapper[[], int]" has no attribute "__iter__"; maybe "__aiter__" or "__aenter__"? (not iterable)  [attr-defined]
+            pass
+
+- case: bound_method_missing_await
+  main: |
+    from aiothreads import threaded
+
+    class MyClass:
+        @threaded
+        def method(self, x: int) -> int:
+            return x * 2
+
+    async def main() -> None:
+        obj = MyClass()
+        x: int = obj.method(1)  # E: Incompatible types in assignment (expression has type "Awaitable[int]", variable has type "int")  [assignment]  # N: Maybe you forgot to use "await"?
+
+- case: bound_iterable_method_sync_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    class MyClass:
+        @threaded_iterable
+        def gen(self) -> Generator[int, None, None]:
+            yield 1
+
+    async def main() -> None:
+        obj = MyClass()
+        for x in obj.gen():  # E: "IteratorWrapper[[], int]" has no attribute "__iter__"; maybe "__aiter__" or "__aenter__"? (not iterable)  [attr-defined]
+            pass
+
+# Positive cases: mypy should not report errors
+
+- case: threaded_correct_await
+  main: |
+    from aiothreads import threaded
+
+    @threaded
+    def compute(x: int) -> int:
+        return x * 2
+
+    async def main() -> None:
+        x: int = await compute(1)
+
+- case: threaded_separate_correct_await
+  main: |
+    from aiothreads import threaded_separate
+
+    @threaded_separate
+    def compute(x: int) -> int:
+        return x * 2
+
+    async def main() -> None:
+        x: int = await compute(1)
+
+- case: threaded_iterable_correct_async_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    @threaded_iterable
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    async def main() -> None:
+        async for x in gen():
+            pass
+
+- case: threaded_iterable_separate_correct_async_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable_separate
+
+    @threaded_iterable_separate
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    async def main() -> None:
+        async for x in gen():
+            pass
+
+- case: sync_call_returns_value
+  main: |
+    from aiothreads import threaded
+
+    @threaded
+    def compute(x: int) -> int:
+        return x * 2
+
+    def main() -> None:
+        x: int = compute.sync_call(1)
+
+- case: iterable_sync_call_returns_generator
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    @threaded_iterable
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    def main() -> None:
+        g = gen.sync_call()
+
+- case: bound_method_correct_await
+  main: |
+    from aiothreads import threaded
+
+    class MyClass:
+        @threaded
+        def method(self, x: int) -> int:
+            return x * 2
+
+    async def main() -> None:
+        obj = MyClass()
+        x: int = await obj.method(1)
+
+- case: bound_method_sync_call
+  main: |
+    from aiothreads import threaded
+
+    class MyClass:
+        @threaded
+        def method(self, x: int) -> int:
+            return x * 2
+
+    def main() -> None:
+        obj = MyClass()
+        x: int = obj.method.sync_call(1)
+
+- case: bound_iterable_correct_async_for
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    class MyClass:
+        @threaded_iterable
+        def gen(self) -> Generator[int, None, None]:
+            yield 1
+
+    async def main() -> None:
+        obj = MyClass()
+        async for x in obj.gen():
+            pass
+
+# Reveal-type cases
+
+- case: reveal_threaded_types
+  regex: true
+  main: |
+    from aiothreads import threaded
+
+    @threaded
+    def compute(x: int) -> int:
+        return x * 2
+
+    async def main() -> None:
+        reveal_type(compute)  # N: Revealed type is "aiothreads\.threads\.Threaded\[\[x: builtins\.int\], builtins\.int\]"
+        reveal_type(compute(1))  # N: Revealed type is "typing\.Awaitable\[builtins\.int\]"
+        reveal_type(await compute(1))  # N: Revealed type is "builtins\.int"
+
+- case: reveal_threaded_iterable_types
+  regex: true
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    @threaded_iterable
+    def gen() -> Generator[int, None, None]:
+        yield 1
+
+    async def main() -> None:
+        reveal_type(gen)  # N: Revealed type is "aiothreads\.threaded_iterable\.ThreadedIterable\[\[\], builtins\.int\]"
+        reveal_type(gen())  # N: Revealed type is "aiothreads\.iterator_wrapper\.IteratorWrapper\[\[\], builtins\.int\]"
+        reveal_type(gen.sync_call())  # N: Revealed type is "typing\.Generator\[builtins\.int, None, None\]"
+
+- case: reveal_bound_method_types
+  regex: true
+  main: |
+    from aiothreads import threaded
+
+    class MyClass:
+        @threaded
+        def method(self, x: int) -> int:
+            return x * 2
+
+    async def main() -> None:
+        obj = MyClass()
+        reveal_type(obj.method)  # N: Revealed type is "aiothreads\.threads\.BoundThreaded\[\[x: builtins\.int\], builtins\.int\]"
+        reveal_type(obj.method(1))  # N: Revealed type is "typing\.Awaitable\[builtins\.int\]"
+        reveal_type(await obj.method(1))  # N: Revealed type is "builtins\.int"
+
+- case: reveal_bound_iterable_method_types
+  regex: true
+  main: |
+    from typing import Generator
+    from aiothreads import threaded_iterable
+
+    class MyClass:
+        @threaded_iterable
+        def gen(self) -> Generator[int, None, None]:
+            yield 1
+
+    async def main() -> None:
+        obj = MyClass()
+        reveal_type(obj.gen)  # N: Revealed type is "aiothreads\.threaded_iterable\.BoundThreadedIterable\[\[\], builtins\.int\]"
+        reveal_type(obj.gen())  # N: Revealed type is "aiothreads\.iterator_wrapper\.IteratorWrapper\[\[\], builtins\.int\]"

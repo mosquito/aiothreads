@@ -17,7 +17,6 @@ from typing import (
     NoReturn,
     Optional,
     Type,
-    Union,
 )
 from weakref import finalize
 
@@ -30,6 +29,7 @@ class ChannelClosed(RuntimeError):
 
 class ChannelTimeout(asyncio.TimeoutError):
     """Raised when a channel operation times out."""
+
     pass
 
 
@@ -176,7 +176,9 @@ class FromThreadChannel:
                     try:
                         await asyncio.wait_for(event.wait(), timeout=effective_timeout)
                     except asyncio.TimeoutError:
-                        raise ChannelTimeout(f"Channel get timed out after {effective_timeout}s")
+                        raise ChannelTimeout(
+                            f"Channel get timed out after {effective_timeout}s"
+                        )
                 else:
                     await event.wait()
 

@@ -88,6 +88,7 @@ async def test_from_thread_channel_timeout_with_data(threaded_decorator):
     @threaded_decorator
     def in_thread():
         import time
+
         time.sleep(0.1)
         channel.put("delayed_data")
 

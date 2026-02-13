@@ -13,7 +13,8 @@ async def test_threaded(threaded_decorator, timer):
 
     with timer(1):
         await asyncio.wait_for(
-            asyncio.gather(sleep(1), sleep(1), sleep(1), sleep(1), sleep(1)), timeout=5,
+            asyncio.gather(sleep(1), sleep(1), sleep(1), sleep(1), sleep(1)),
+            timeout=5,
         )
 
 
@@ -25,7 +26,8 @@ async def test_threaded_exc(threaded_decorator):
     number = 90
 
     done, _ = await asyncio.wait(
-        [worker() for _ in range(number)], timeout=1,
+        [worker() for _ in range(number)],
+        timeout=1,
     )
 
     for task in done:
@@ -169,8 +171,7 @@ async def test_threaded_iterator_class_classmethod():
 async def test_threaded_abc_method():
     class Base(ABC):
         @abstractmethod
-        def foo(self) -> int:
-            ...
+        def foo(self) -> int: ...
 
     class Impl(Base):
         @threaded
@@ -185,8 +186,7 @@ async def test_threaded_abc_method():
 async def test_threaded_iterable_abc_method():
     class Base(ABC):
         @abstractmethod
-        def foo(self):
-            ...
+        def foo(self): ...
 
     class Impl(Base):
         @threaded_iterable
@@ -201,12 +201,10 @@ async def test_threaded_iterable_abc_method():
 async def test_threaded_deep_abc_chain():
     class Base(ABC):
         @abstractmethod
-        def foo(self) -> int:
-            ...
+        def foo(self) -> int: ...
 
         @abstractmethod
-        def bar(self) -> int:
-            ...
+        def bar(self) -> int: ...
 
     class Middle(Base):
         @threaded
@@ -228,12 +226,10 @@ async def test_threaded_deep_abc_chain():
 async def test_threaded_iterable_deep_abc_chain():
     class Base(ABC):
         @abstractmethod
-        def foo(self):
-            ...
+        def foo(self): ...
 
         @abstractmethod
-        def bar(self):
-            ...
+        def bar(self): ...
 
     class Middle(Base):
         @threaded_iterable
@@ -255,8 +251,7 @@ async def test_threaded_iterable_deep_abc_chain():
 async def test_threaded_abc_diamond_inheritance():
     class Base(ABC):
         @abstractmethod
-        def foo(self) -> int:
-            ...
+        def foo(self) -> int: ...
 
     class Left(Base):
         pass
@@ -363,8 +358,7 @@ async def test_threaded_abc_combined_with_custom_metaclass():
 
     class Base(ABC, metaclass=CombinedMeta):
         @abstractmethod
-        def foo(self) -> int:
-            ...
+        def foo(self) -> int: ...
 
     class Impl(Base):
         @threaded
@@ -390,8 +384,7 @@ async def test_threaded_iterable_abc_combined_with_custom_metaclass():
 
     class Base(ABC, metaclass=CombinedMeta):
         @abstractmethod
-        def foo(self):
-            ...
+        def foo(self): ...
 
     class Impl(Base):
         @threaded_iterable
@@ -409,8 +402,7 @@ async def test_threaded_abc_override_in_grandchild():
 
     class Base(ABC):
         @abstractmethod
-        def foo(self) -> int:
-            ...
+        def foo(self) -> int: ...
 
     class Middle(Base):
         @threaded

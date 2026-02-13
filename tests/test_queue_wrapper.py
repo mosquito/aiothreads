@@ -1,5 +1,4 @@
 import pytest
-from queue import Empty as QueueEmpty
 
 from aiothreads.iterator_wrapper import QueueWrapperBase
 

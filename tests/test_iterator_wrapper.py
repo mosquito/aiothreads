@@ -5,7 +5,13 @@ import threading
 import pytest
 from async_timeout import timeout
 
-from aiothreads import ChannelClosed, FromThreadChannel, threaded, threaded_iterable, threaded_iterable_separate
+from aiothreads import (
+    ChannelClosed,
+    FromThreadChannel,
+    threaded,
+    threaded_iterable,
+    threaded_iterable_separate,
+)
 
 gen_decos = (threaded_iterable, threaded_iterable_separate)
 

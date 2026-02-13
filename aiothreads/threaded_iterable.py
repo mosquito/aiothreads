@@ -1,6 +1,16 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Callable, Concatenate, Generator, Generic, MutableMapping, Optional, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Generator,
+    Generic,
+    MutableMapping,
+    Optional,
+    Union,
+    overload,
+)
 from weakref import WeakKeyDictionary
 
 from .iterator_wrapper import IteratorWrapper
@@ -13,21 +23,26 @@ class ThreadedIterableBase(Generic[P, T], ABC):
     max_size: int
 
     @abstractmethod
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        ...
+    def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def sync_call(
-        self, *args: P.args, **kwargs: P.kwargs,
+        self,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> Generator[T, None, None]:
         return self.func(*args, **kwargs)
 
     def async_call(
-        self, *args: P.args, **kwargs: P.kwargs,
+        self,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> IteratorWrapper[P, T]:
         return self.create_wrapper(*args, **kwargs)
 
     def create_wrapper(
-        self, *args: P.args, **kwargs: P.kwargs,
+        self,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> IteratorWrapper[P, T]:
         return IteratorWrapper(
             partial(self.func, *args, **kwargs),
@@ -69,16 +84,14 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
         self: "ThreadedIterable[Concatenate[S, BP], T]",
         instance: S,
         owner: Optional[type] = ...,
-    ) -> "BoundThreadedIterable[BP, T]":
-        ...
+    ) -> "BoundThreadedIterable[BP, T]": ...
 
     @overload
     def __get__(
         self: "ThreadedIterable[P, T]",
         instance: None,
         owner: Optional[type] = ...,
-    ) -> "ThreadedIterable[P, T]":
-        ...
+    ) -> "ThreadedIterable[P, T]": ...
 
     def __get__(
         self,
@@ -124,8 +137,7 @@ def threaded_iterable(
     func: Callable[P, Generator[T, None, None]],
     *,
     max_size: int = 0,
-) -> "ThreadedIterable[P, T]":
-    ...
+) -> "ThreadedIterable[P, T]": ...
 
 
 @overload
@@ -133,9 +145,9 @@ def threaded_iterable(
     *,
     max_size: int = 0,
 ) -> Callable[
-    [Callable[P, Generator[T, None, None]]], ThreadedIterable[P, T],
-]:
-    ...
+    [Callable[P, Generator[T, None, None]]],
+    ThreadedIterable[P, T],
+]: ...
 
 
 def threaded_iterable(
@@ -145,7 +157,8 @@ def threaded_iterable(
 ) -> Union[
     ThreadedIterable[P, T],
     Callable[
-        [Callable[P, Generator[T, None, None]]], ThreadedIterable[P, T],
+        [Callable[P, Generator[T, None, None]]],
+        ThreadedIterable[P, T],
     ],
 ]:
     if func is None:
@@ -161,7 +174,9 @@ class IteratorWrapperSeparate(IteratorWrapper):
 
 class ThreadedIterableSeparate(ThreadedIterable[P, T]):
     def create_wrapper(
-        self, *args: P.args, **kwargs: P.kwargs,
+        self,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> IteratorWrapperSeparate:
         return IteratorWrapperSeparate(
             partial(self.func, *args, **kwargs),
@@ -174,8 +189,7 @@ def threaded_iterable_separate(
     func: Callable[P, Generator[T, None, None]],
     *,
     max_size: int = 0,
-) -> "ThreadedIterable[P, T]":
-    ...
+) -> "ThreadedIterable[P, T]": ...
 
 
 @overload
@@ -185,8 +199,7 @@ def threaded_iterable_separate(
 ) -> Callable[
     [Callable[P, Generator[T, None, None]]],
     ThreadedIterableSeparate[P, T],
-]:
-    ...
+]: ...
 
 
 def threaded_iterable_separate(
@@ -196,7 +209,8 @@ def threaded_iterable_separate(
 ) -> Union[
     ThreadedIterable[P, T],
     Callable[
-        [Callable[P, Generator[T, None, None]]], ThreadedIterableSeparate[P, T],
+        [Callable[P, Generator[T, None, None]]],
+        ThreadedIterableSeparate[P, T],
     ],
 ]:
     if func is None:

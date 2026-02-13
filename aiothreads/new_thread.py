@@ -21,7 +21,9 @@ class ThreadCall:
     kwargs: Dict[str, Any] = field(default_factory=dict)
     context: contextvars.Context = field(default_factory=contextvars.copy_context)
 
-    def __set_result(self, result: Optional[Any], exception: Optional[BaseException]) -> None:
+    def __set_result(
+        self, result: Optional[Any], exception: Optional[BaseException]
+    ) -> None:
         if self.future.done():
             return
 

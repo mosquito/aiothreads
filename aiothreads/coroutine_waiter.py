@@ -7,7 +7,8 @@ from aiothreads.types import EVENT_LOOP, T
 
 class CoroutineWaiter:
     def __init__(
-        self, coroutine: Coroutine[Any, Any, T],
+        self,
+        coroutine: Coroutine[Any, Any, T],
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ):
         self.__coro: Coroutine[Any, Any, T] = coroutine

@@ -16,4 +16,6 @@ GenType = Generator[T, None, None]
 FuncType = Callable[[], GenType]
 
 # Context variable to store the current event loop
-EVENT_LOOP: contextvars.ContextVar[asyncio.AbstractEventLoop] = contextvars.ContextVar("event_loop")
+EVENT_LOOP: contextvars.ContextVar[asyncio.AbstractEventLoop] = contextvars.ContextVar(
+    "event_loop"
+)

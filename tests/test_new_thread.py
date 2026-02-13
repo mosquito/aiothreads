@@ -10,6 +10,6 @@ async def test_no_return():
         nonlocal called
         called = True
 
-    future = run_in_new_thread(worker, no_return=True)
+    run_in_new_thread(worker, no_return=True)
     await asyncio.sleep(0.5)
     assert called

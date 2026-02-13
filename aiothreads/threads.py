@@ -7,7 +7,17 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor as ThreadPoolExecutorBase
 from functools import partial
 from types import MappingProxyType
-from typing import Any, Awaitable, Callable, Concatenate, Generator, Generic, MutableMapping, Optional, overload
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Concatenate,
+    Generator,
+    Generic,
+    MutableMapping,
+    Optional,
+    overload,
+)
 from weakref import WeakKeyDictionary
 
 from .iterator_wrapper import IteratorWrapper
@@ -18,7 +28,9 @@ from .types import BP, EVENT_LOOP, P, S, T
 
 log = logging.getLogger(__name__)
 
-THREADED_ITERABLE_DEFAULT_MAX_SIZE = int(os.getenv("THREADED_ITERABLE_DEFAULT_MAX_SIZE", 1024))
+THREADED_ITERABLE_DEFAULT_MAX_SIZE = int(
+    os.getenv("THREADED_ITERABLE_DEFAULT_MAX_SIZE", 1024)
+)
 
 
 class ThreadPoolException(RuntimeError):
@@ -65,8 +77,7 @@ class ThreadedBase(Generic[P, T], ABC):
     func: Callable[P, T]
 
     @abstractmethod
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        ...
+    def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
     def sync_call(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.func(*args, **kwargs)
@@ -110,16 +121,14 @@ class Threaded(ThreadedBase[P, T]):
         self: "Threaded[Concatenate[S, BP], T]",
         instance: S,
         owner: Optional[type] = ...,
-    ) -> "BoundThreaded[BP, T]":
-        ...
+    ) -> "BoundThreaded[BP, T]": ...
 
     @overload
     def __get__(
         self: "Threaded[P, T]",
         instance: None,
         owner: Optional[type] = ...,
-    ) -> "Threaded[P, T]":
-        ...
+    ) -> "Threaded[P, T]": ...
 
     def __get__(
         self,
@@ -154,15 +163,13 @@ class BoundThreaded(ThreadedBase[P, T]):
 
 
 @overload
-def threaded(func: Callable[P, T]) -> Threaded[P, T]:
-    ...
+def threaded(func: Callable[P, T]) -> Threaded[P, T]: ...
 
 
 @overload
 def threaded(
     func: Callable[P, Generator[T, None, None]],
-) -> Callable[P, IteratorWrapper[P, T]]:
-    ...
+) -> Callable[P, IteratorWrapper[P, T]]: ...
 
 
 def threaded(
@@ -185,7 +192,9 @@ class ThreadedSeparate(Threaded[P, T]):
         self.detach = detach
 
     def async_call(self, *args: P.args, **kwargs: P.kwargs) -> Awaitable[T]:
-        return run_in_new_thread(self.func, args=args, kwargs=kwargs, detach=self.detach)
+        return run_in_new_thread(
+            self.func, args=args, kwargs=kwargs, detach=self.detach
+        )
 
 
 def threaded_separate(

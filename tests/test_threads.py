@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -40,7 +41,7 @@ async def test_awaiter_cancel():
     loop = asyncio.get_running_loop()
     future = loop.create_future()
 
-    task = asyncio.ensure_future(_awaiter(future))
+    task: asyncio.Task[Any] = asyncio.ensure_future(_awaiter(future))
     await asyncio.sleep(0)
     task.cancel()
 
@@ -55,18 +56,18 @@ async def test_awaiter_success():
     future = loop.create_future()
     future.set_result(42)
 
-    result = await _awaiter(future)
+    result: Any = await _awaiter(future)
     assert result == 42
 
 
 def test_run_in_executor_lazy_wrapper():
     awaitable = run_in_executor(lambda: 42)
-    result = asyncio.run(awaitable)
+    result: Any = asyncio.run(awaitable)  # type: ignore[arg-type]
     assert result == 42
 
 
 async def test_threaded_separate_detach_false():
-    decorator = threaded_separate(False)
+    decorator: Any = threaded_separate(False)  # type: ignore[arg-type]
 
     @decorator
     def foo():

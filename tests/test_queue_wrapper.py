@@ -4,12 +4,12 @@ from aiothreads.iterator_wrapper import QueueWrapperBase
 
 
 def test_put_not_implemented():
-    base = QueueWrapperBase()
+    base = QueueWrapperBase()  # type: ignore[abstract]
     with pytest.raises(NotImplementedError):
         base.put(1)
 
 
 def test_get_not_implemented():
-    base = QueueWrapperBase()
+    base = QueueWrapperBase()  # type: ignore[abstract]
     with pytest.raises(NotImplementedError):
         base.get()

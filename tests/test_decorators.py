@@ -175,7 +175,7 @@ async def test_threaded_abc_method():
 
     class Impl(Base):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 42
 
     instance = Impl()
@@ -208,12 +208,12 @@ async def test_threaded_deep_abc_chain():
 
     class Middle(Base):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 1
 
     class Leaf(Middle):
         @threaded
-        def bar(self) -> int:
+        def bar(self) -> int:  # type: ignore[override]
             return 2
 
     instance = Leaf()
@@ -261,7 +261,7 @@ async def test_threaded_abc_diamond_inheritance():
 
     class Diamond(Left, Right):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 42
 
     instance = Diamond()
@@ -362,7 +362,7 @@ async def test_threaded_abc_combined_with_custom_metaclass():
 
     class Impl(Base):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 42
 
     instance = Impl()
@@ -406,12 +406,12 @@ async def test_threaded_abc_override_in_grandchild():
 
     class Middle(Base):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 1
 
     class Grandchild(Middle):
         @threaded
-        def foo(self) -> int:
+        def foo(self) -> int:  # type: ignore[override]
             return 2
 
     mid = Middle()

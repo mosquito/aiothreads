@@ -6,7 +6,19 @@ from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
 from queue import Queue
 from types import TracebackType
-from typing import Any, AsyncIterator, Awaitable, Callable, Deque, Generator, Generic, NoReturn, Optional, Type, Union
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Deque,
+    Generator,
+    Generic,
+    NoReturn,
+    Optional,
+    Type,
+    Union,
+)
 from weakref import finalize
 
 from .types import P, T
@@ -31,7 +43,7 @@ class QueueWrapperBase:
 
 
 class DequeWrapper(QueueWrapperBase):
-    __slots__ = "queue",
+    __slots__ = ("queue",)
 
     def __init__(self) -> None:
         self.queue: Deque[Any] = deque()
@@ -46,7 +58,7 @@ class DequeWrapper(QueueWrapperBase):
 
 
 class QueueWrapper(QueueWrapperBase):
-    __slots__ = "queue",
+    __slots__ = ("queue",)
 
     def __init__(self, max_size: int) -> None:
         self.queue: Queue = Queue(maxsize=max_size)
@@ -112,8 +124,10 @@ class FromThreadChannel:
         return self
 
     def __exit__(
-        self, exc_type: Type[Exception],
-        exc_val: Exception, exc_tb: TracebackType,
+        self,
+        exc_type: Type[Exception],
+        exc_val: Exception,
+        exc_tb: TracebackType,
     ) -> None:
         self.close()
 
@@ -284,7 +298,9 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         return self
 
     async def __aexit__(
-        self, exc_type: Any, exc_val: Any,
+        self,
+        exc_type: Any,
+        exc_val: Any,
         exc_tb: Any,
     ) -> None:
         if self.closed:
@@ -295,7 +311,8 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
 
 class IteratorProxy(Generic[T], AsyncIterator):
     def __init__(
-        self, iterator: AsyncIterator[T],
+        self,
+        iterator: AsyncIterator[T],
         finalizer: Callable[[], Any],
     ):
         self.__iterator = iterator

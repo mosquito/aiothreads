@@ -457,6 +457,7 @@ async def test_threaded_slots_no_weakref():
 
     class SlottedOwner:
         __slots__ = ("value",)
+        value: int
 
         @threaded
         def foo(self) -> int:

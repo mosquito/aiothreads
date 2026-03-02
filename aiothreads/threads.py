@@ -137,8 +137,11 @@ class Threaded(ThreadedBase[P, T]):
     ) -> "Threaded[P, T] | BoundThreaded[Any, T]":
         key = instance
         result: Any
-        if key is not None and key in self.__cache:
-            return self.__cache[key]
+        try:
+            if key is not None and key in self.__cache:
+                return self.__cache[key]
+        except TypeError:
+            pass
         if self.func_type is staticmethod:
             result = self
         elif self.func_type is classmethod:
@@ -150,7 +153,10 @@ class Threaded(ThreadedBase[P, T]):
             result = self
 
         if key is not None:
-            self.__cache[key] = result
+            try:
+                self.__cache[key] = result
+            except TypeError:
+                pass
         return result
 
 

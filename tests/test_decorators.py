@@ -421,3 +421,61 @@ async def test_threaded_abc_override_in_grandchild():
     leaf = Grandchild()
     assert leaf.foo.sync_call() == 2
     assert await leaf.foo() == 2
+
+
+async def test_threaded_init_subclass_getattr():
+    """__init_subclass__ inspecting threaded methods via getattr."""
+
+    class Base:
+        _methods: list = []
+
+        def __init_subclass__(cls, **kwargs):
+            super().__init_subclass__(**kwargs)
+            for name in list(vars(cls)):
+                if not name.startswith("_"):
+                    fn = getattr(cls, name)
+                    cls._methods.append((name, fn))
+
+    class Impl(Base):
+        @threaded
+        def foo(self) -> int:
+            return 42
+
+        @threaded_iterable
+        def bar(self):
+            yield 99
+
+    instance = Impl()
+    assert instance.foo.sync_call() == 42
+    assert await instance.foo() == 42
+    assert list(instance.bar.sync_call()) == [99]
+    assert [x async for x in instance.bar()] == [99]
+
+
+async def test_threaded_slots_no_weakref():
+    """Instances with __slots__ and no __weakref__ can't be cached."""
+
+    class SlottedOwner:
+        __slots__ = ("value",)
+        value: int
+
+        @threaded
+        def foo(self) -> int:
+            return self.value
+
+        @threaded_iterable
+        def bar(self):
+            yield self.value
+
+    obj = SlottedOwner()
+    obj.value = 42
+
+    # Should work even though instance can't be weakly referenced
+    assert obj.foo.sync_call() == 42
+    assert await obj.foo() == 42
+    assert list(obj.bar.sync_call()) == [42]
+    assert [x async for x in obj.bar()] == [42]
+
+    # Each access creates a new bound wrapper (no caching possible)
+    assert obj.foo is not obj.foo
+    assert obj.bar is not obj.bar

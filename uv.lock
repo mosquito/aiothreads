@@ -11,6 +11,7 @@ source = { editable = "." }
 dev = [
     { name = "async-timeout" },
     { name = "coveralls" },
+    { name = "markdown-pytest" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -25,6 +26,7 @@ dev = [
 dev = [
     { name = "async-timeout", specifier = ">=5.0.1" },
     { name = "coveralls", specifier = ">=4.0.1" },
+    { name = "markdown-pytest", specifier = ">=0.5.3" },
     { name = "mypy", specifier = ">=1.17.1" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
@@ -328,6 +330,18 @@ wheels = [
 ]
 
 [[package]]
+name = "markdown-pytest"
+version = "0.5.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest-subtests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/ed/269e93dbc84cc9ce6e15874e399342113e99b0ffa58edcbd413e9220ae12/markdown_pytest-0.5.3.tar.gz", hash = "sha256:5e3909e00efb5cd305d43ee353afa4872aca73bfe5d69df9a6da624a1e2368a7", size = 46265, upload-time = "2026-02-22T08:54:28.67Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/f0/4c1a64aaec10f848cf39d3981d9fb13ba6a033d89b2e495fdcac8f886ca6/markdown_pytest-0.5.3-py3-none-any.whl", hash = "sha256:3d870b140eb9d4b323e12549e702a657cb1b6d05af11dd5c70fec325ad300c99", size = 13658, upload-time = "2026-02-22T08:54:26.921Z" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -565,6 +579,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8e/a0/3ec3d82da6c109efb48c70ffc666badb226e987a1f6c1076f1fddb7ca1a3/pytest_mypy_plugins-3.2.0.tar.gz", hash = "sha256:68bd95400c8f128327acd9a16c737dbec18b20fced3184ad97f391b07d4662f4", size = 27292, upload-time = "2024-12-21T20:11:36.467Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/84/6c9af99c416e52286fbf6df91a2ae19ef4da5d6f2dab626f8ff1a61280b5/pytest_mypy_plugins-3.2.0-py3-none-any.whl", hash = "sha256:46e24e8d9eaeabcddd0a5dc5fb089c021903d5952e0c9d8af79383db99b9ffae", size = 20627, upload-time = "2024-12-21T20:11:33.723Z" },
+]
+
+[[package]]
+name = "pytest-subtests"
+version = "0.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/d9/20097971a8d315e011e055d512fa120fd6be3bdb8f4b3aa3e3c6bf77bebc/pytest_subtests-0.15.0.tar.gz", hash = "sha256:cb495bde05551b784b8f0b8adfaa27edb4131469a27c339b80fd8d6ba33f887c", size = 18525, upload-time = "2025-10-20T16:26:18.358Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/64/bba465299b37448b4c1b84c7a04178399ac22d47b3dc5db1874fe55a2bd3/pytest_subtests-0.15.0-py3-none-any.whl", hash = "sha256:da2d0ce348e1f8d831d5a40d81e3aeac439fec50bd5251cbb7791402696a9493", size = 9185, upload-time = "2025-10-20T16:26:17.239Z" },
 ]
 
 [[package]]

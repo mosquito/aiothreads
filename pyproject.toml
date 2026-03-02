@@ -65,6 +65,7 @@ exclude = [".*", "*.pyc", "__pycache__"]
 dev = [
     "async-timeout>=5.0.1",
     "coveralls>=4.0.1",
+    "markdown-pytest>=0.5.3",
     "mypy>=1.17.1",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",

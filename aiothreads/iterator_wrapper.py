@@ -1,7 +1,7 @@
 import asyncio
 import inspect
+import threading as _threading
 from abc import abstractmethod
-from contextlib import suppress
 from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
@@ -24,6 +24,21 @@ from weakref import finalize
 from .types import P, T
 
 
+class _ImmediateAwaitable:
+    """Awaitable that resolves immediately without being a coroutine.
+
+    Unlike ``async def noop(): pass``, discarding this object without
+    awaiting it does **not** trigger 'coroutine was never awaited'.
+    Used by :meth:`IteratorWrapper.close` when called from a GC
+    finalizer thread where the return value is always discarded.
+    """
+
+    __slots__ = ()
+
+    def __await__(self) -> Generator[None, None, None]:
+        return iter(())  # type: ignore[return-value]
+
+
 class ChannelClosed(RuntimeError):
     pass
 
@@ -44,18 +59,21 @@ class QueueWrapperBase:
 
 
 class DequeWrapper(QueueWrapperBase):
-    __slots__ = ("queue",)
+    __slots__ = ("_lock", "queue")
 
     def __init__(self) -> None:
+        self._lock = _threading.Lock()
         self.queue: Deque[Any] = deque()
 
     def get(self) -> Any:
-        if not self.queue:
-            raise QueueEmpty
-        return self.queue.popleft()
+        with self._lock:
+            if not self.queue:
+                raise QueueEmpty
+            return self.queue.popleft()
 
     def put(self, item: Any) -> None:
-        return self.queue.append(item)
+        with self._lock:
+            self.queue.append(item)
 
 
 class QueueWrapper(QueueWrapperBase):
@@ -91,9 +109,10 @@ class FromThreadChannel:
         timeout: Default timeout in seconds for get operations (0 = no timeout)
     """
 
-    __slots__ = ("queue", "_closed", "_data_event", "_loop", "_timeout")
+    __slots__ = ("_lock", "queue", "_closed", "_data_event", "_loop", "_timeout")
 
     def __init__(self, maxsize: int = 0, timeout: float = 0):
+        self._lock = _threading.Lock()
         self.queue: QueueWrapperBase = make_queue(max_size=maxsize)
         self._closed = False
         self._data_event: Optional[asyncio.Event] = None
@@ -113,13 +132,15 @@ class FromThreadChannel:
             self._loop.call_soon_threadsafe(self._data_event.set)
 
     def close(self) -> None:
-        self._closed = True
+        with self._lock:
+            self._closed = True
         # Wake up any waiters so they can see the channel is closed
         self._signal_data_available()
 
     @property
     def is_closed(self) -> bool:
-        return self._closed
+        with self._lock:
+            return self._closed
 
     def __enter__(self) -> "FromThreadChannel":
         return self
@@ -208,7 +229,7 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         self._loop = loop
         self.executor = executor
 
-        self.__close_event = asyncio.Event()
+        self.__close_event = _threading.Event()
         self.__channel: FromThreadChannel = FromThreadChannel(maxsize=max_size)
         self.__gen_task: Optional[asyncio.Future] = None
         self.__gen_func: Callable = gen_func
@@ -253,8 +274,7 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
                     return
                 self.__channel.put((e, True))
             finally:
-                with suppress(RuntimeError):
-                    self.loop.call_soon_threadsafe(self.__close_event.set)
+                self.__close_event.set()
 
     def close(self) -> Awaitable[None]:
         self.__channel.close()
@@ -264,14 +284,28 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
             self.__channel.queue.get()
         except QueueEmpty:
             pass
-        if self.__gen_task is None:
-            self.__close_event.set()
-        return asyncio.ensure_future(self.wait_closed())
+        coro = self.wait_closed()
+        try:
+            return asyncio.ensure_future(coro)
+        except RuntimeError:
+            # GC finalizer may call close() from a non-event-loop thread
+            # where ensure_future fails. Close the abandoned coroutine and
+            # fall back to scheduling cleanup via call_soon_threadsafe.
+            coro.close()
+            try:
+                self.loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(self.wait_closed()),
+                )
+            except (RuntimeError, AttributeError):
+                pass
+            return _ImmediateAwaitable()
 
     async def wait_closed(self) -> None:
-        await self.__close_event.wait()
-        if self.__gen_task:
-            await asyncio.gather(self.__gen_task, return_exceptions=True)
+        if self.__gen_task is None:
+            return
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.__close_event.wait)
+        await asyncio.gather(self.__gen_task, return_exceptions=True)
 
     def _run(self) -> Any:
         return self.loop.run_in_executor(self.executor, self._in_thread)

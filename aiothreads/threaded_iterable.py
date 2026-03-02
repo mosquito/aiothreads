@@ -1,3 +1,4 @@
+import threading
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import (
@@ -77,6 +78,7 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
 
         self.func = actual_func
         self.max_size = max_size
+        self.__lock = threading.Lock()
         self.__cache: MutableMapping[Any, Any] = WeakKeyDictionary()
 
     @overload
@@ -98,30 +100,33 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
         instance: Any,
         owner: Optional[type] = None,
     ) -> "ThreadedIterable[P, T] | BoundThreadedIterable[Any, T]":
-        key = instance
-        result: Any
-        try:
-            if key is not None and key in self.__cache:
-                return self.__cache[key]
-        except TypeError:
-            pass
-
-        if self.func_type is staticmethod:
-            result = self
-        elif self.func_type is classmethod:
-            cls = owner if instance is None else type(instance)
-            result = BoundThreadedIterable(self.func, cls, self.max_size)
-        elif instance is not None:
-            result = BoundThreadedIterable(self.func, instance, self.max_size)
-        else:
-            result = self
-
-        if key is not None:
+        with self.__lock:
+            key = instance
+            result: Any
             try:
-                self.__cache[key] = result
+                if key is not None and key in self.__cache:
+                    return self.__cache[key]
             except TypeError:
                 pass
-        return result
+
+            if self.func_type is staticmethod:
+                result = self
+            elif self.func_type is classmethod:
+                cls = owner if instance is None else type(instance)
+                result = BoundThreadedIterable(self.func, cls, self.max_size)
+            elif instance is not None:
+                result = BoundThreadedIterable(
+                    self.func, instance, self.max_size,
+                )
+            else:
+                result = self
+
+            if key is not None:
+                try:
+                    self.__cache[key] = result
+                except TypeError:
+                    pass
+            return result
 
 
 class BoundThreadedIterable(ThreadedIterableBase[P, T]):

@@ -42,7 +42,7 @@ class ThreadCall:
 
         if self.loop.is_closed():
             log.warning("Event loop is closed. Ignoring %r", self.func)
-            raise asyncio.CancelledError
+            return
 
         result, exception = None, None
         try:
@@ -53,13 +53,13 @@ class ThreadCall:
         if no_return:
             return
 
-        if self.loop.is_closed():
+        try:
+            self.loop.call_soon_threadsafe(self.__set_result, result, exception)
+        except RuntimeError:
             log.warning(
                 "Event loop is closed. Forget execution result for %r",
                 self.func,
             )
-            raise asyncio.CancelledError
-        self.loop.call_soon_threadsafe(self.__set_result, result, exception)
 
 
 def run_in_new_thread(
@@ -86,5 +86,5 @@ def run_in_new_thread(
         kwargs=dict(no_return=no_return),
         daemon=detach,
     )
-    loop.call_soon(thread.start)
+    thread.start()
     return future

@@ -264,6 +264,8 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
             self.__channel.queue.get()
         except QueueEmpty:
             pass
+        if self.__gen_task is None:
+            self.__close_event.set()
         return asyncio.ensure_future(self.wait_closed())
 
     async def wait_closed(self) -> None:

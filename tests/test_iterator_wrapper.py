@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+from contextlib import suppress
 
 import pytest
 from async_timeout import timeout
@@ -257,6 +258,123 @@ async def test_threaded_generator_func_raises(iterator_decorator):
         with pytest.raises(RuntimeError):
             async for _ in errored(True):  # NOQA
                 pass
+
+
+async def test_threaded_generator_error_before_consumption(iterator_decorator):
+    """Context manager exit with exception before consuming must not hang."""
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        while True:
+            yield os.urandom(32)
+
+    async def run():
+        try:
+            async with gen() as iterator:
+                _ = iterator
+                raise RuntimeError("error before consumption")
+        except RuntimeError:
+            pass
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_error_after_partial_consumption(
+    iterator_decorator,
+):
+    """Exception after consuming some items inside context manager must not hang."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            for i in range(100):
+                yield i
+        finally:
+            stopped.set()
+
+    async def run():
+        try:
+            async with gen() as iterator:
+                count = 0
+                async for _ in iterator:
+                    count += 1
+                    if count == 3:
+                        raise RuntimeError("error after partial consumption")
+        except RuntimeError:
+            pass
+
+    await asyncio.wait_for(run(), timeout=5)
+    stopped.wait(timeout=5)
+    assert stopped.is_set()
+
+
+async def test_threaded_generator_close_without_context_manager_no_consumption(
+    iterator_decorator,
+):
+    """Calling close() directly on unconsumed iterator must not hang."""
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        while True:
+            yield os.urandom(32)
+
+    async def run():
+        wrapper = gen()
+        await wrapper.close()
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_double_close(iterator_decorator):
+    """Closing an already-closed iterator must not hang."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            for i in range(5):
+                yield i
+        finally:
+            stopped.set()
+
+    async def run():
+        async with gen() as iterator:
+            async for _ in iterator:
+                break
+
+        stopped.wait(timeout=5)
+        assert stopped.is_set()
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_cancel_during_iteration(iterator_decorator):
+    """Cancelling the consuming task must not leave the generator hanging."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            while True:
+                yield os.urandom(32)
+        finally:
+            stopped.set()
+
+    async def consume():
+        async with gen() as iterator:
+            async for _ in iterator:
+                await asyncio.sleep(10)  # will be cancelled
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.1)  # let it start consuming
+    task.cancel()
+
+    with suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+    stopped.wait(timeout=5)
+    assert stopped.is_set()
 
 
 def test_call_soon_threadsafe_on_closed_loop():

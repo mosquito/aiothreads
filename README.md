@@ -1,4 +1,4 @@
-# aiothreads Documentation
+# aiothreads
 
 [![PyPI version](https://img.shields.io/pypi/v/aiothreads.svg)](https://pypi.org/project/aiothreads/)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aiothreads.svg)](https://pypi.org/project/aiothreads/)
@@ -20,12 +20,13 @@ this basic functionality:
 **Limitations of `asyncio.to_thread()`:**
 
 - No support for generators or iterators
-- For support for long-running or blocking operations you have to create a separate executors
-- No way to calling async code from threads
+- No way to run long-running or blocking operations without creating separate executors
+- No way to call async code from threads
 
 **asyncio example**
 
 <!-- name: test_asyncio_to_thread_comparison -->
+
 ```python
 import asyncio
 import time
@@ -49,6 +50,7 @@ asyncio.run(main())
 **aiothreads - comprehensive solution**
 
 <!-- name: test_comprehensive_example -->
+
 ```python
 import asyncio
 import time
@@ -123,7 +125,11 @@ pip install aiothreads
 
 ### Basic Usage
 
+Decorate any blocking function with `@threaded` and call it with `await`. Multiple calls run concurrently in the
+thread pool:
+
 <!-- name: test_basic_usage -->
+
 ```python
 import asyncio
 import time
@@ -151,16 +157,16 @@ asyncio.run(main())
 
 ### Choosing the Right Decorator
 
-| Use Case                      | Recommended Decorator         | Reason                                           |
-|-------------------------------|-------------------------------|--------------------------------------------------|
-| Short I/O operations (< 30s)  | `@threaded`                   | Efficient resource reuse                         |
-| CPU-bound tasks (< 30s)       | `@threaded`                   | Controlled concurrency                           |
+| Use Case                      | Recommended Decorator         | Reason                                             |
+|-------------------------------|-------------------------------|----------------------------------------------------|
+| Short I/O operations (< 30s)  | `@threaded`                   | Efficient resource reuse                           |
+| CPU-bound tasks (< 30s)       | `@threaded`                   | Controlled concurrency                             |
 | Blocking pipe/stream reading  | `@threaded_separate`          | Won't block thread pool, creates a separate thread |
-| Operations that may hang      | `@threaded_separate`          | Isolation from pool                              |
-| Continuous monitoring tasks   | `@threaded_separate`          | Don't monopolize pool workers                    |
-| High-frequency short tasks    | `@threaded`                   | Lower overhead                                   |
-| Resource-intensive generators | `@threaded_iterable`          | Controlled memory usage                          |
-| Long-lived data streams       | `@threaded_iterable_separate` | Complete isolation                               |
+| Operations that may hang      | `@threaded_separate`          | Isolation from pool                                |
+| Continuous monitoring tasks   | `@threaded_separate`          | Don't monopolize pool workers                      |
+| High-frequency short tasks    | `@threaded`                   | Lower overhead                                     |
+| Resource-intensive generators | `@threaded_iterable`          | Controlled memory usage                            |
+| Long-lived data streams       | `@threaded_iterable_separate` | Complete isolation                                 |
 
 **Thread Pool Benefits:**
 
@@ -178,13 +184,14 @@ asyncio.run(main())
 
 **Separate Thread Risks:**
 
-- Be careful and not create too many separate threads
+- Be careful not to create too many separate threads
 
 ### The `@threaded` Decorator
 
 The `@threaded` decorator converts synchronous functions to run in the asyncio thread pool:
 
 <!-- name: test_threaded_decorator -->
+
 ```python
 import asyncio
 import time
@@ -215,6 +222,7 @@ asyncio.run(main())
 When you decorate a function with `@threaded`, it becomes a `Threaded` object with three calling methods:
 
 <!-- name: test_decorated_function_interface -->
+
 ```python
 import asyncio
 from aiothreads import threaded
@@ -246,35 +254,15 @@ async def main():
 asyncio.run(main())
 ```
 
-**Type Safety**
-
-The decorators preserve type information for static type checkers:
-
-<!-- name: test_type_safety -->
-```python
-import asyncio
-from typing import List
-from aiothreads import threaded
-
-
-@threaded
-def process_numbers(numbers: List[int], multiplier: float = 1.0) -> List[float]:
-    return [n * multiplier for n in numbers]
-
-
-async def main():
-    result = await process_numbers([1, 2, 3], 2.5)
-    assert result == [2.5, 5.0, 7.5]
-
-
-asyncio.run(main())
-```
+All decorated functions also expose `sync_call` (bypasses threading, runs inline) and `async_call` (explicit async),
+in addition to the default `__call__` which is an alias for `async_call`.
 
 ### Separate Thread Execution
 
 Use `@threaded_separate` to run functions in completely separate threads (not the thread pool):
 
 <!-- name: test_separate_thread_generator -->
+
 ```python
 import asyncio
 import io
@@ -334,6 +322,7 @@ each call, bypassing the thread pool entirely. This has important implications:
 The decorators work seamlessly with class methods and preserve typing:
 
 <!-- name: test_class_method_support -->
+
 ```python
 import asyncio
 from typing import ClassVar
@@ -378,127 +367,22 @@ async def main():
 asyncio.run(main())
 ```
 
-**Object Interface for All Decorators**
-
-All decorated functions become wrapper objects with consistent interfaces:
-
-<!-- name: test_object_interface -->
-```python
-import asyncio
-from typing import Generator
-from aiothreads import threaded, threaded_iterable, Threaded, ThreadedIterable
-
-
-@threaded
-def sync_function(x: int) -> str:
-    return str(x)
-
-
-@threaded_iterable
-def sync_generator(n: int) -> Generator[int, None, None]:
-    for i in range(n):
-        yield i
-
-
-async def main():
-    # Both have the same interface pattern:
-    assert isinstance(sync_function, Threaded)
-    assert isinstance(sync_generator, ThreadedIterable)
-
-    # All support sync_call and async_call
-    sync_result = sync_function.sync_call(42)
-    assert sync_result == "42"
-    async_result = await sync_function.async_call(42)
-    assert async_result == "42"
-    default_result = await sync_function(42)  # Same as async_call
-    assert default_result == "42"
-
-    # Generators become async iterators when called
-    sync_gen = sync_generator.sync_call(5)  # Regular generator
-    assert list(sync_gen) == [0, 1, 2, 3, 4]
-
-
-asyncio.run(main())
-```
-
-### Sync and Async Calling
-
-Threaded functions provide both sync and async interfaces with full type safety:
-
-<!-- name: test_sync_and_async_calling -->
-```python
-import asyncio
-from typing import Dict, Any
-from aiothreads import threaded
-
-
-@threaded
-def compute(x: int, y: int) -> Dict[str, Any]:
-    return {"sum": x + y, "product": x * y}
-
-
-async def main():
-    # Async call (default) - returns Awaitable[Dict[str, Any]]
-    result = await compute(1, 2)
-    assert result == {"sum": 3, "product": 2}
-
-    # Explicit async call - same type signature
-    result = await compute.async_call(1, 2)
-    assert result == {"sum": 3, "product": 2}
-
-    # Synchronous call (bypasses threading) - returns Dict[str, Any]
-    result = compute.sync_call(1, 2)
-    assert result == {"sum": 3, "product": 2}
-
-
-asyncio.run(main())
-```
-
-**Type Preservation**
-
-The wrapper objects maintain the original function signatures for type checkers:
-
-<!-- name: test_type_preservation -->
-```python
-import asyncio
-from typing import Any
-from aiothreads import threaded
-
-
-@threaded
-def complex_function(
-    required_arg: str,
-    optional_arg: int | None = None,
-    *args: str,
-    **kwargs: str | int
-) -> dict[str, Any]:
-    return {"args": args, "kwargs": kwargs}
-
-
-async def main():
-    result = await complex_function("hello", 42, "a", "b", key="value")
-    assert result == {"args": ("a", "b"), "kwargs": {"key": "value"}}
-
-    # Type checker sees the same signature for all call methods
-    result = complex_function.sync_call("test")
-    assert result == {"args": (), "kwargs": {}}
-
-
-asyncio.run(main())
-```
+The descriptor protocol handles method binding automatically — decorators work the same way on module-level functions,
+instance methods, class methods, and static methods.
 
 ## Working With Synchronous Generators
 
 ### The `@threaded_iterable` Decorator
 
-Convert sync generators to async iterators:
+`@threaded_iterable` converts a sync generator into an async iterator. The generator runs in a thread, yielding items
+through a thread-safe channel. Breaking from the `async for` loop automatically stops the generator thread:
 
 <!-- name: test_crawl_api_pages -->
+
 ```python
 import asyncio
 import time
 from aiothreads import threaded_iterable
-
 
 # Simulation of paginated API data
 PAGES = {
@@ -559,7 +443,9 @@ requests will be made, and resources are properly cleaned up.
 
 ### Backpressure Control
 
-Control memory usage with the `max_size` parameter:
+`max_size` controls the buffer between the sync generator (producer) and the async consumer. When the buffer is full,
+the sync generator **blocks** until the async side consumes an item. This prevents a fast producer from filling up
+memory.
 
 **Default Queue Size Configuration**
 
@@ -576,6 +462,7 @@ python your_app.py
 - Explicit `max_size` parameter always overrides the default
 
 <!-- name: test_backpressure -->
+
 ```python
 import asyncio
 import time
@@ -635,16 +522,20 @@ async def main():
 asyncio.run(main())
 ```
 
+With `max_size=50`, the producer thread blocks after buffering 50 items until the async consumer catches up. Combined
+with early `break`, this gives full control over both memory usage and network activity.
+
 ### Context Manager Support
 
-Async iterators support proper cleanup:
+Threaded iterators can be used as async context managers to guarantee cleanup. The generator's `finally` block always
+runs, even when you break early:
 
 <!-- name: test_context_manager -->
+
 ```python
 import asyncio
 import time
 from aiothreads import threaded_iterable
-
 
 # Simulation of paginated API data
 USERS_DB = [
@@ -689,9 +580,11 @@ asyncio.run(main())
 
 ### Separate Thread Generators
 
-For complete isolation:
+Use `@threaded_iterable_separate` to run each generator in its own dedicated thread, completely independent of the
+thread pool. This is useful for generators that may block indefinitely or need complete isolation:
 
 <!-- name: test_separate_thread_iterable -->
+
 ```python
 import asyncio
 import time
@@ -727,6 +620,7 @@ asyncio.run(main())
 can quickly exhaust system resources:
 
 <!-- name: test_resource_control -->
+
 ```python
 import asyncio
 import time
@@ -770,9 +664,19 @@ from the thread pool.
 
 When working in threaded functions, you can call back into async code:
 
+| Function                                 | Input                          | When to use                                          |
+|------------------------------------------|--------------------------------|------------------------------------------------------|
+| `sync_await(func, *args)`                | Async callable + args          | Inside `@threaded` — simplest API                    |
+| `wait_coroutine(coro)`                   | Coroutine object               | Inside `@threaded` when you already have a coroutine |
+| `sync_wait_coroutine(loop, func, *args)` | Explicit loop + async callable | With `asyncio.to_thread` (no auto loop)              |
+
 ### Basic Async Calls
 
+Use `sync_await` to call an async function from within a `@threaded` function. The event loop is automatically
+available via context variables — no manual setup needed:
+
 <!-- name: test_sync_await -->
+
 ```python
 import asyncio
 import time
@@ -815,12 +719,16 @@ async def main():
 asyncio.run(main())
 ```
 
+`sync_await` blocks the current thread until the coroutine completes on the event loop, then returns the result. This
+lets you freely interleave sync and async work within the same function.
+
 ### Event Loop Context
 
 `@threaded` decorated functions automatically store the current event loop in context variables, making it available for
 async calls within the thread:
 
 <!-- name: test_event_loop_context -->
+
 ```python
 import asyncio
 from aiothreads import threaded, sync_await, wait_coroutine
@@ -850,44 +758,16 @@ async def main():
 asyncio.run(main())
 ```
 
-### Using with `asyncio.to_thread`
-
-When using the sync-to-async bridge functions with `asyncio.to_thread`, you need to manually pass the event loop:
-
-<!-- name: test_asyncio_to_thread_usage -->
-```python
-import asyncio
-from aiothreads import sync_wait_coroutine
-
-
-async def async_function():
-    await asyncio.sleep(0.01)
-    return "async result"
-
-
-current_loop = None
-
-
-def sync_function_for_to_thread():
-    # Must get and pass event loop manually
-    return sync_wait_coroutine(current_loop, async_function)
-
-
-async def main():
-    global current_loop
-
-    # Using asyncio.to_thread - requires manual loop setting
-    current_loop = asyncio.get_running_loop()
-    result = await asyncio.to_thread(sync_function_for_to_thread)
-    assert result == "async result"
-
-
-asyncio.run(main())
-```
+Both `sync_await` and `wait_coroutine` read the loop from the `EVENT_LOOP` context variable, which `@threaded` sets
+automatically before entering the thread.
 
 ### Coroutine Waiting
 
+Use `wait_coroutine` when you already have a coroutine object. When using `asyncio.to_thread` instead of `@threaded`,
+pass the event loop explicitly with `sync_wait_coroutine`:
+
 <!-- name: test_coroutine_waiting -->
+
 ```python
 import asyncio
 from aiothreads import wait_coroutine, threaded
@@ -931,9 +811,11 @@ asyncio.run(main())
 
 ### Context Variables
 
-Context variables are properly propagated:
+`@threaded` copies the current context before entering the thread, so `contextvars.ContextVar` values set by the
+caller are available inside the thread:
 
 <!-- name: test_context_variables -->
+
 ```python
 import asyncio
 import contextvars
@@ -960,6 +842,9 @@ async def main():
 asyncio.run(main())
 ```
 
+This works because `@threaded` uses `contextvars.copy_context()` before dispatching to the thread, so the thread
+inherits a snapshot of the caller's context.
+
 ## Advanced Usage
 
 ### FromThreadChannel with Timeout
@@ -968,6 +853,7 @@ The `FromThreadChannel` class provides efficient event-based communication from 
 It uses `asyncio.Event` instead of polling for immediate wake-up when data is available.
 
 <!-- name: test_from_thread_channel -->
+
 ```python
 import asyncio
 from aiothreads import FromThreadChannel, ChannelClosed, ChannelTimeout, threaded
@@ -1009,13 +895,18 @@ asyncio.run(main())
 ```
 
 **Timeout Behavior:**
+
 - `timeout=0` (default): No timeout, wait indefinitely
 - `timeout=N`: Wait up to N seconds, then raise `ChannelTimeout`
 - Per-call timeout overrides the default set in constructor
 
 ### Error Handling
 
+Exceptions raised inside threaded functions propagate normally to the caller. Use standard `try`/`except` to handle
+them:
+
 <!-- name: test_error_handling -->
+
 ```python
 import asyncio
 from aiothreads import threaded
@@ -1042,9 +933,15 @@ async def main():
 asyncio.run(main())
 ```
 
+The original exception type and traceback are preserved, so standard error handling patterns work without changes.
+
 ### Performance Considerations
 
+Control the thread pool size with `set_default_executor`. Use `@threaded_separate` for CPU-bound work that shouldn't
+compete with pool workers handling I/O:
+
 <!-- name: test_performance -->
+
 ```python
 import asyncio
 import time

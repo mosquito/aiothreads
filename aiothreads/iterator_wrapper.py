@@ -5,6 +5,7 @@ from abc import abstractmethod
 from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
+from queue import Full as QueueFull
 from queue import Queue
 from types import TracebackType
 from typing import (
@@ -51,7 +52,9 @@ class ChannelTimeout(asyncio.TimeoutError):
 
 class QueueWrapperBase:
     @abstractmethod
-    def put(self, item: Any) -> None:
+    def put(
+        self, item: Any, *, block: bool = True, timeout: Optional[float] = None
+    ) -> None:
         raise NotImplementedError
 
     def get(self) -> Any:
@@ -71,7 +74,9 @@ class DequeWrapper(QueueWrapperBase):
                 raise QueueEmpty
             return self.queue.popleft()
 
-    def put(self, item: Any) -> None:
+    def put(
+        self, item: Any, *, block: bool = True, timeout: Optional[float] = None
+    ) -> None:  # noqa: ARG002
         with self._lock:
             self.queue.append(item)
 
@@ -82,8 +87,10 @@ class QueueWrapper(QueueWrapperBase):
     def __init__(self, max_size: int) -> None:
         self.queue: Queue = Queue(maxsize=max_size)
 
-    def put(self, item: Any) -> None:
-        return self.queue.put(item)
+    def put(
+        self, item: Any, *, block: bool = True, timeout: Optional[float] = None
+    ) -> None:
+        return self.queue.put(item, block=block, timeout=timeout)
 
     def get(self) -> Any:
         return self.queue.get_nowait()
@@ -154,11 +161,30 @@ class FromThreadChannel:
         self.close()
 
     def put(self, item: Any) -> None:
-        """Put an item into the channel. Thread-safe."""
-        with self._lock:
-            if self._closed:
-                raise ChannelClosed
-            self.queue.put(item)
+        """Put an item into the channel. Thread-safe.
+
+        For bounded queues, ensure we periodically re-check whether the
+        channel was closed while waiting for space so producer threads don't
+        block forever when consumers are cancelled.
+        """
+        if isinstance(self.queue, QueueWrapper):
+            while True:
+                with self._lock:
+                    if self._closed:
+                        raise ChannelClosed
+                try:
+                    self.queue.put(item, timeout=0.1)
+                    break
+                except QueueFull:
+                    if self.is_closed:
+                        raise ChannelClosed
+                    continue
+        else:
+            with self._lock:
+                if self._closed:
+                    raise ChannelClosed
+                self.queue.put(item)
+
         self._signal_data_available()
 
     async def get(self, timeout: Optional[float] = None) -> Any:

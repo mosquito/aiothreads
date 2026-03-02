@@ -116,7 +116,9 @@ class ThreadedIterable(ThreadedIterableBase[P, T]):
                 result = BoundThreadedIterable(self.func, cls, self.max_size)
             elif instance is not None:
                 result = BoundThreadedIterable(
-                    self.func, instance, self.max_size,
+                    self.func,
+                    instance,
+                    self.max_size,
                 )
             else:
                 result = self

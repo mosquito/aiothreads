@@ -155,10 +155,10 @@ class FromThreadChannel:
 
     def put(self, item: Any) -> None:
         """Put an item into the channel. Thread-safe."""
-        if self.is_closed:
-            raise ChannelClosed
-
-        self.queue.put(item)
+        with self._lock:
+            if self._closed:
+                raise ChannelClosed
+            self.queue.put(item)
         self._signal_data_available()
 
     async def get(self, timeout: Optional[float] = None) -> Any:
@@ -278,12 +278,6 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
 
     def close(self) -> Awaitable[None]:
         self.__channel.close()
-        # if the iterator inside thread is blocked on `.put()`
-        # we need to wake it up to signal that it is closed.
-        try:
-            self.__channel.queue.get()
-        except QueueEmpty:
-            pass
         coro = self.wait_closed()
         try:
             return asyncio.ensure_future(coro)

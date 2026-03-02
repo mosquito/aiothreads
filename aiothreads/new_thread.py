@@ -2,6 +2,7 @@ import asyncio
 import contextvars
 import logging
 import threading
+from asyncio import InvalidStateError
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -27,10 +28,13 @@ class ThreadCall:
         if self.future.done():
             return
 
-        if exception:
-            self.future.set_exception(exception)
-        else:
-            self.future.set_result(result)
+        try:
+            if exception:
+                self.future.set_exception(exception)
+            else:
+                self.future.set_result(result)
+        except InvalidStateError:
+            return
 
     def __in_thread(self) -> None:
         EVENT_LOOP.set(self.loop)

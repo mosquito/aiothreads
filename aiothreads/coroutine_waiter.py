@@ -18,10 +18,14 @@ class CoroutineWaiter:
         self.__exception: Optional[BaseException] = None
 
     def _on_result(self, task: asyncio.Future) -> None:
-        self.__exception = task.exception()
-        if self.__exception is None:
-            self.__result = task.result()
-        self.__event.set()
+        try:
+            self.__exception = task.exception()
+            if self.__exception is None:
+                self.__result = task.result()
+        except asyncio.CancelledError as e:
+            self.__exception = e
+        finally:
+            self.__event.set()
 
     def _awaiter(self) -> None:
         task: asyncio.Future = self.__loop.create_task(self.__coro)
@@ -31,7 +35,11 @@ class CoroutineWaiter:
         self.__loop.call_soon_threadsafe(self._awaiter)
 
     def wait(self) -> Any:
-        self.__event.wait()
+        while not self.__event.wait(timeout=1.0):
+            if self.__loop.is_closed():
+                raise RuntimeError(
+                    "Event loop closed before coroutine could be scheduled",
+                )
         if self.__exception is not None:
             raise self.__exception
         return self.__result

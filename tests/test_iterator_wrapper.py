@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+from contextlib import suppress
 
 import pytest
 from async_timeout import timeout
@@ -257,6 +258,203 @@ async def test_threaded_generator_func_raises(iterator_decorator):
         with pytest.raises(RuntimeError):
             async for _ in errored(True):  # NOQA
                 pass
+
+
+async def test_threaded_generator_error_before_consumption(iterator_decorator):
+    """Context manager exit with exception before consuming must not hang."""
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        while True:
+            yield os.urandom(32)
+
+    async def run():
+        try:
+            async with gen() as iterator:
+                _ = iterator
+                raise RuntimeError("error before consumption")
+        except RuntimeError:
+            pass
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_error_after_partial_consumption(
+    iterator_decorator,
+):
+    """Exception after consuming some items inside context manager must not hang."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            for i in range(100):
+                yield i
+        finally:
+            stopped.set()
+
+    async def run():
+        try:
+            async with gen() as iterator:
+                count = 0
+                async for _ in iterator:
+                    count += 1
+                    if count == 3:
+                        raise RuntimeError("error after partial consumption")
+        except RuntimeError:
+            pass
+
+    await asyncio.wait_for(run(), timeout=5)
+    stopped.wait(timeout=5)
+    assert stopped.is_set()
+
+
+async def test_threaded_generator_close_without_context_manager_no_consumption(
+    iterator_decorator,
+):
+    """Calling close() directly on unconsumed iterator must not hang."""
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        while True:
+            yield os.urandom(32)
+
+    async def run():
+        wrapper = gen()
+        await wrapper.close()
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_double_close(iterator_decorator):
+    """Closing an already-closed iterator must not hang."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            for i in range(5):
+                yield i
+        finally:
+            stopped.set()
+
+    async def run():
+        async with gen() as iterator:
+            async for _ in iterator:
+                break
+
+        stopped.wait(timeout=5)
+        assert stopped.is_set()
+
+    await asyncio.wait_for(run(), timeout=5)
+
+
+async def test_threaded_generator_cancel_during_iteration(iterator_decorator):
+    """Cancelling the consuming task must not leave the generator hanging."""
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            while True:
+                yield os.urandom(32)
+        finally:
+            stopped.set()
+
+    async def consume():
+        async with gen() as iterator:
+            async for _ in iterator:
+                await asyncio.sleep(10)  # will be cancelled
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.1)  # let it start consuming
+    task.cancel()
+
+    with suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+    stopped.wait(timeout=5)
+    assert stopped.is_set()
+
+
+def test_close_event_set_when_loop_closes():
+    """RACE-18: __close_event must be set even when the event loop closes
+    during _in_thread execution. Using threading.Event means the thread
+    can set it directly without call_soon_threadsafe."""
+    import time
+
+    from aiothreads.iterator_wrapper import IteratorWrapper
+
+    gen_finished = threading.Event()
+
+    def slow_gen():
+        try:
+            while True:
+                yield 1
+                time.sleep(0.01)
+        finally:
+            gen_finished.set()
+
+    async def _run():
+        wrapper = IteratorWrapper(slow_gen)
+        aiter = wrapper.__aiter__()
+        # consume one item to start the generator thread
+        await aiter.__anext__()
+        return wrapper
+
+    loop = asyncio.new_event_loop()
+    wrapper = loop.run_until_complete(_run())
+    # Close the loop while the generator thread is still running
+    loop.close()
+
+    # The generator thread should finish and set the close event
+    gen_finished.wait(timeout=5)
+    assert gen_finished.is_set(), "Generator thread hung when loop closed"
+
+    # The internal __close_event (threading.Event) should also be set
+    # Access it via name mangling
+    close_event = wrapper._IteratorWrapper__close_event
+    assert close_event.is_set(), "__close_event was not set after loop close"
+
+
+async def test_gc_finalizer_from_non_event_loop_thread(iterator_decorator):
+    """RACE-7: GC finalizer calling close() from non-loop thread must not
+    leave orphaned generator threads. The generator's finally block must run."""
+    import gc
+
+    stopped = threading.Event()
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        try:
+            while True:
+                yield 1
+        finally:
+            stopped.set()
+
+    # Consume a few items, then drop the proxy from a non-event-loop thread
+    items = []
+    proxy = gen().__aiter__()
+    items.append(await proxy.__anext__())
+    items.append(await proxy.__anext__())
+    assert len(items) == 2
+
+    # Delete proxy from a background thread to simulate GC on a non-loop thread
+    deleted = threading.Event()
+
+    def delete_from_thread():
+        nonlocal proxy
+        del proxy
+        gc.collect()
+        deleted.set()
+
+    t = threading.Thread(target=delete_from_thread, daemon=True)
+    t.start()
+    deleted.wait(timeout=5)
+
+    # Generator's finally block should run within a reasonable time
+    stopped.wait(timeout=5)
+    assert stopped.is_set(), "Generator thread was orphaned (finally block never ran)"
 
 
 def test_call_soon_threadsafe_on_closed_loop():

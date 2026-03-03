@@ -136,8 +136,12 @@ class FromThreadChannel:
 
     def _signal_data_available(self) -> None:
         """Signal that data is available. Thread-safe."""
-        if self._loop is not None and self._data_event is not None:
-            self._loop.call_soon_threadsafe(self._data_event.set)
+        loop = self._loop
+        if loop is not None and self._data_event is not None:
+            try:
+                loop.call_soon_threadsafe(self._data_event.set)
+            except RuntimeError:
+                pass  # loop is closed, no waiters to wake
 
     def close(self) -> None:
         with self._lock:
@@ -272,8 +276,8 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         return self.__channel.is_closed
 
     @staticmethod
-    def __throw(_: Any) -> NoReturn:
-        raise
+    def __throw(e: BaseException) -> NoReturn:
+        raise e
 
     def _in_thread(self) -> None:
         gen: Optional[Generator[Any, None, None]] = None

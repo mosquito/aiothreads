@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import threading as _threading
 from abc import abstractmethod
+from contextlib import suppress
 from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
@@ -275,6 +276,7 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         raise
 
     def _in_thread(self) -> None:
+        gen: Optional[Generator[Any, None, None]] = None
         with self.__channel:
             try:
                 gen = iter(self.__gen_func())
@@ -300,6 +302,9 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
                     return
                 self.__channel.put((e, True))
             finally:
+                if gen is not None and inspect.isgenerator(gen):
+                    with suppress(Exception):
+                        gen.close()
                 self.__close_event.set()
 
     def close(self) -> Awaitable[None]:

@@ -14,6 +14,7 @@ from aiothreads import (
     threaded_iterable,
     threaded_iterable_separate,
 )
+from aiothreads.iterator_wrapper import IteratorWrapper
 
 gen_decos = (threaded_iterable, threaded_iterable_separate)
 
@@ -496,3 +497,48 @@ def test_call_soon_threadsafe_on_closed_loop():
 
     # Producer thread should exit without hanging
     assert finished.wait(timeout=5), "Producer thread hung"
+
+
+@pytest.mark.parametrize("deco", gen_decos)
+async def test_throw_on_non_generator_iterable(deco):
+    """Test that __throw (explicit raise e) works for non-generator iterables.
+
+    When the wrapped callable returns a plain iterable (not a generator),
+    IteratorWrapper falls back to __throw instead of gen.throw. Breaking
+    from async for triggers channel closure, and __throw must correctly
+    propagate the resulting exception so the thread exits cleanly.
+    """
+
+    class CountUpTo:
+        """Plain iterable, not a generator — has no .throw() method."""
+        def __init__(self, n: int):
+            self.n = n
+        def __iter__(self):
+            for i in range(self.n):
+                yield i
+
+    @deco(max_size=1)
+    def iterate_non_generator():
+        return CountUpTo(1000)
+
+    collected = []
+    async with timeout(5):
+        async for item in iterate_non_generator():
+            collected.append(item)
+            if item >= 5:
+                break
+
+    assert collected == list(range(6))
+
+
+def test_throw_raises_given_exception_directly():
+    """__throw must use 'raise e', not bare 'raise'.
+
+    Bare 'raise' fails with RuntimeError when there is no active exception
+    context. 'raise e' works regardless of context.
+    """
+    # Access the name-mangled static method
+    throw = IteratorWrapper._IteratorWrapper__throw  # type: ignore[attr-defined]
+    err = ValueError("test error")
+    with pytest.raises(ValueError, match="test error"):
+        throw(err)

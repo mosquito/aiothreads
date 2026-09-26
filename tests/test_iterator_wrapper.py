@@ -676,3 +676,75 @@ async def test_aexit_waits_for_generator_cleanup_after_cancel(deco, size):
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, 5)
         assert finished.is_set(), "generator finally did not run before exit"
+
+
+async def test_no_successful_put_after_consumer_observed_closed():
+    """A producer that waits for space must not enqueue after the consumer
+    got ``ChannelClosed``. The gate holds the producer in the wait for
+    space while the channel closes and drains.
+    """
+    from aiothreads.iterator_wrapper import QueueWrapper
+
+    entered = threading.Event()
+    release = threading.Event()
+    channel = FromThreadChannel(maxsize=1)
+
+    class GatedQueue(QueueWrapper):
+        def wait_not_full(self, timeout):
+            entered.set()
+            assert release.wait(5)
+            super().wait_not_full(timeout)
+
+    channel.queue = GatedQueue(1)
+    channel.put("first")
+
+    def produce():
+        try:
+            channel.put("late")
+        except ChannelClosed:
+            return "rejected"
+        return "accepted"
+
+    producer = asyncio.create_task(asyncio.to_thread(produce))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        channel.close()
+        assert await channel.get() == "first"
+        with pytest.raises(ChannelClosed):
+            await channel.get()
+    finally:
+        release.set()
+    result = await asyncio.wait_for(producer, 5)
+    assert result == "rejected", "put succeeded after get raised ChannelClosed"
+
+
+@pytest.mark.parametrize("size", [0, 1, 3])
+async def test_close_wakes_all_waiters(size):
+    for _ in range(20):
+        channel = FromThreadChannel(maxsize=size)
+        waiters = [asyncio.create_task(channel.get()) for _ in range(8)]
+        await asyncio.sleep(0)
+        await asyncio.to_thread(channel.close)
+        results = await asyncio.wait_for(
+            asyncio.gather(*waiters, return_exceptions=True), 5
+        )
+        assert all(isinstance(result, ChannelClosed) for result in results)
+
+
+@pytest.mark.parametrize("deco", gen_decos)
+@pytest.mark.parametrize("size", [0, 1, 3])
+async def test_exact_sequence_and_terminal_exception(deco, size):
+    @deco(max_size=size)
+    def gen():
+        yield from range(50)
+        raise ValueError("terminal")
+
+    async def consume():
+        values = []
+        with pytest.raises(ValueError, match="terminal"):
+            async for value in gen():
+                values.append(value)
+        assert values == list(range(50))
+
+    for _ in range(5):
+        await asyncio.wait_for(asyncio.gather(*(consume() for _ in range(8))), 10)

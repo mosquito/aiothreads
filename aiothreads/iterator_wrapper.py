@@ -7,7 +7,6 @@ from collections import deque
 from concurrent.futures import Executor
 from queue import Empty as QueueEmpty
 from queue import Full as QueueFull
-from queue import Queue
 from types import TracebackType
 from typing import (
     Any,
@@ -61,6 +60,14 @@ class QueueWrapperBase:
     def get(self) -> Any:
         raise NotImplementedError
 
+    def wait_not_full(self, timeout: float) -> None:
+        """Wait until the queue has space, ``wake_waiters`` is called, or
+        the timeout expires. An unbounded queue always has space.
+        """
+
+    def wake_waiters(self) -> None:
+        """Wake every thread that waits in ``wait_not_full``."""
+
 
 class DequeWrapper(QueueWrapperBase):
     __slots__ = ("_lock", "queue")
@@ -83,18 +90,49 @@ class DequeWrapper(QueueWrapperBase):
 
 
 class QueueWrapper(QueueWrapperBase):
-    __slots__ = ("queue",)
+    """Bounded thread-safe queue.
+
+    ``get`` and ``put(block=False)`` never block. A producer that finds
+    the queue full calls ``wait_not_full`` outside any caller lock.
+    """
+
+    __slots__ = ("_condition", "_max_size", "queue")
 
     def __init__(self, max_size: int) -> None:
-        self.queue: Queue = Queue(maxsize=max_size)
+        self._max_size = max_size
+        self._condition = _threading.Condition()
+        self.queue: Deque[Any] = deque()
+
+    def _has_space(self) -> bool:
+        return len(self.queue) < self._max_size
 
     def put(
         self, item: Any, *, block: bool = True, timeout: Optional[float] = None
     ) -> None:
-        return self.queue.put(item, block=block, timeout=timeout)
+        with self._condition:
+            if not self._has_space():
+                if not block:
+                    raise QueueFull
+                if not self._condition.wait_for(self._has_space, timeout):
+                    raise QueueFull
+            self.queue.append(item)
 
     def get(self) -> Any:
-        return self.queue.get_nowait()
+        with self._condition:
+            if not self.queue:
+                raise QueueEmpty
+            item = self.queue.popleft()
+            self._condition.notify()
+            return item
+
+    def wait_not_full(self, timeout: float) -> None:
+        with self._condition:
+            if not self._has_space():
+                self._condition.wait(timeout)
+
+    def wake_waiters(self) -> None:
+        with self._condition:
+            self._condition.notify_all()
 
 
 def make_queue(max_size: int = 0) -> QueueWrapperBase:
@@ -146,7 +184,9 @@ class FromThreadChannel:
     def close(self) -> None:
         with self._lock:
             self._closed = True
-        # Wake up any waiters so they can see the channel is closed
+        # Wake producers that wait for space and consumers that wait
+        # for data, so that both see that the channel is closed.
+        self.queue.wake_waiters()
         self._signal_data_available()
 
     @property
@@ -168,27 +208,23 @@ class FromThreadChannel:
     def put(self, item: Any) -> None:
         """Put an item into the channel. Thread-safe.
 
-        For bounded queues, ensure we periodically re-check whether the
-        channel was closed while waiting for space so producer threads don't
-        block forever when consumers are cancelled.
+        The closed check and the enqueue run under one lock, so the
+        channel accepts no item after ``close``. When a bounded queue is
+        full, the producer waits for space outside the lock. ``close``
+        wakes the producer, and each retry checks the closed flag again.
+        Thus producer threads do not block forever when consumers are
+        cancelled.
         """
-        if isinstance(self.queue, QueueWrapper):
-            while True:
-                with self._lock:
-                    if self._closed:
-                        raise ChannelClosed
-                try:
-                    self.queue.put(item, timeout=0.1)
-                    break
-                except QueueFull:
-                    if self.is_closed:
-                        raise ChannelClosed
-                    continue
-        else:
+        while True:
             with self._lock:
                 if self._closed:
                     raise ChannelClosed
-                self.queue.put(item)
+                try:
+                    self.queue.put(item, block=False)
+                    break
+                except QueueFull:
+                    pass
+            self.queue.wait_not_full(timeout=0.1)
 
         self._signal_data_available()
 

@@ -461,24 +461,32 @@ async def test_gc_finalizer_from_non_event_loop_thread(iterator_decorator):
 
 
 def test_call_soon_threadsafe_on_closed_loop():
-    """Test that _in_thread finally block doesn't crash when loop is closed.
+    """``put`` must not raise or block after the event loop is closed.
 
-    When the event loop shuts down while a producer thread is active,
-    call_soon_threadsafe raises RuntimeError. The finally block in
-    _in_thread must suppress this so __close_event.set doesn't get lost.
+    ``call_soon_threadsafe`` raises RuntimeError on a closed loop. The
+    channel must suppress it so that a producer thread can finish.
+    The producer runs until the loop is closed and then puts a few more
+    items. Only that tail has a time limit, so the test does not depend
+    on the speed of the machine.
     """
     import time
 
     channel = FromThreadChannel(maxsize=0)
+    loop_closed = threading.Event()
     finished = threading.Event()
+    errors: list[BaseException] = []
 
     def producer():
         try:
-            for i in range(100):
+            i = 0
+            while not loop_closed.is_set():
                 channel.put(i)
-                time.sleep(0.01)
-        except RuntimeError:
-            pass  # expected: loop is closed
+                i += 1
+                time.sleep(0.001)
+            for _ in range(10):
+                channel.put(i)
+        except BaseException as e:
+            errors.append(e)
         finally:
             finished.set()
 
@@ -496,9 +504,10 @@ def test_call_soon_threadsafe_on_closed_loop():
     loop = asyncio.new_event_loop()
     loop.run_until_complete(_run())
     loop.close()
+    loop_closed.set()
 
-    # Producer thread should exit without hanging
     assert finished.wait(timeout=5), "Producer thread hung"
+    assert not errors, f"Producer raised: {errors!r}"
 
 
 @pytest.mark.parametrize("deco", gen_decos)

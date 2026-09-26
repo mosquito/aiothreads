@@ -2,6 +2,7 @@ import asyncio
 import os
 import threading
 from contextlib import suppress
+from queue import Empty as QueueEmpty
 
 import pytest
 from async_timeout import timeout
@@ -412,10 +413,11 @@ def test_close_event_set_when_loop_closes():
     gen_finished.wait(timeout=5)
     assert gen_finished.is_set(), "Generator thread hung when loop closed"
 
-    # The internal __close_event (threading.Event) should also be set
-    # Access it via name mangling
+    # The internal __close_event (threading.Event) should also be set.
+    # The generator thread sets it after gen.close() runs the generator
+    # finally block, so wait for it instead of checking it at once.
     close_event = wrapper._IteratorWrapper__close_event
-    assert close_event.is_set(), "__close_event was not set after loop close"
+    assert close_event.wait(timeout=5), "__close_event was not set after loop close"
 
 
 async def test_gc_finalizer_from_non_event_loop_thread(iterator_decorator):
@@ -511,8 +513,10 @@ async def test_throw_on_non_generator_iterable(deco):
 
     class CountUpTo:
         """Plain iterable, not a generator — has no .throw() method."""
+
         def __init__(self, n: int):
             self.n = n
+
         def __iter__(self):
             for i in range(self.n):
                 yield i
@@ -542,3 +546,94 @@ def test_throw_raises_given_exception_directly():
     err = ValueError("test error")
     with pytest.raises(ValueError, match="test error"):
         throw(err)
+
+
+@pytest.mark.parametrize("maxsize", [0, 4])
+async def test_channel_get_drains_item_put_right_before_close(maxsize):
+    """A producer can put its last item and close the channel after the
+    consumer saw an empty queue but before it checked ``is_closed``.
+    The consumer must still receive that item before ``ChannelClosed``.
+
+    The proxy queue reproduces the window: the first ``get`` performs the
+    producer side (put, close) and then reports the queue as empty.
+    """
+    channel = FromThreadChannel(maxsize=maxsize)
+    real_queue = channel.queue
+
+    class RacingQueue:
+        armed = True
+
+        def get(self):
+            if self.armed:
+                self.armed = False
+                channel.queue = real_queue
+                channel.put("last")
+                channel.close()
+                raise QueueEmpty
+            return real_queue.get()
+
+        def put(self, item, **kwargs):
+            return real_queue.put(item, **kwargs)
+
+    channel.queue = RacingQueue()  # type: ignore[assignment]
+
+    assert await channel.get() == "last"
+    with pytest.raises(ChannelClosed):
+        await channel.get()
+
+
+@pytest.mark.parametrize("maxsize", [0, 3])
+async def test_no_item_lost_under_concurrency(maxsize):
+    """Many generators are consumed fully. Every item must arrive.
+
+    On a free-threaded build the event loop thread can be preempted
+    between the empty-queue check and the closed check in the channel.
+    That exposed the loss of the last item. A few busy threads raise
+    the preemption rate; they run only when the GIL is disabled and
+    spare CPUs exist, because with the GIL or on one CPU they only make
+    the test slow.
+    """
+    import os
+    import sys
+
+    n_items = 50
+    n_generators = 16
+    rounds = 40
+
+    @threaded_iterable(max_size=maxsize)
+    def gen():
+        for i in range(n_items):
+            yield i
+
+    async def consume_all():
+        total = 0
+        async for i in gen():
+            total += i
+        return total
+
+    stop = threading.Event()
+
+    def busy():
+        while not stop.is_set():
+            sum(range(200))
+
+    gil_disabled = not getattr(sys, "_is_gil_enabled", lambda: True)()
+    if hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0))
+    else:
+        cpus = os.cpu_count() or 1
+    busy_count = min(2, max(0, cpus - 2)) if gil_disabled else 0
+    busy_threads = [
+        threading.Thread(target=busy, daemon=True) for _ in range(busy_count)
+    ]
+    for t in busy_threads:
+        t.start()
+    try:
+        expected = n_items * (n_items - 1) // 2
+        for _ in range(rounds):
+            totals = await asyncio.gather(*(consume_all() for _ in range(n_generators)))
+            assert totals == [expected] * n_generators
+    finally:
+        stop.set()
+        for t in busy_threads:
+            t.join(timeout=5)

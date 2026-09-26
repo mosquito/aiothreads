@@ -208,32 +208,39 @@ class FromThreadChannel:
 
         while True:
             try:
-                result = self.queue.get()
-                return result
+                return self.queue.get()
             except QueueEmpty:
-                if self.is_closed:
+                pass
+
+            if self.is_closed:
+                # A producer can put its last item and close the channel
+                # between the get above and this check. Drain the queue
+                # before the channel is reported closed. Items put before
+                # close are visible here because put and close share a lock.
+                try:
+                    return self.queue.get()
+                except QueueEmpty:
                     raise ChannelClosed
 
-                # Clear event before waiting (in case it was set)
-                event.clear()
+            # Clear event before waiting (in case it was set)
+            event.clear()
 
-                # Double-check queue after clearing event to avoid race condition
+            # Double-check queue after clearing event to avoid race condition
+            try:
+                return self.queue.get()
+            except QueueEmpty:
+                pass
+
+            # Wait for data with optional timeout
+            if effective_timeout > 0:
                 try:
-                    result = self.queue.get()
-                    return result
-                except QueueEmpty:
-                    pass
-
-                # Wait for data with optional timeout
-                if effective_timeout > 0:
-                    try:
-                        await asyncio.wait_for(event.wait(), timeout=effective_timeout)
-                    except asyncio.TimeoutError:
-                        raise ChannelTimeout(
-                            f"Channel get timed out after {effective_timeout}s"
-                        )
-                else:
-                    await event.wait()
+                    await asyncio.wait_for(event.wait(), timeout=effective_timeout)
+                except asyncio.TimeoutError:
+                    raise ChannelTimeout(
+                        f"Channel get timed out after {effective_timeout}s"
+                    )
+            else:
+                await event.wait()
 
     def __await__(self) -> Any:
         return self.get().__await__()

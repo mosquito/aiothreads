@@ -637,3 +637,42 @@ async def test_no_item_lost_under_concurrency(maxsize):
         stop.set()
         for t in busy_threads:
             t.join(timeout=5)
+
+
+@pytest.mark.parametrize("deco", gen_decos)
+@pytest.mark.parametrize("size", [1, 3])
+async def test_aexit_waits_for_generator_cleanup_after_cancel(deco, size):
+    """Cancel the consumer while the producer waits on a full queue.
+    When ``async with`` exits, the generator finally block has run, even
+    when the proxy finalizer started ``close`` before ``__aexit__``.
+    """
+    for _ in range(10):
+        filled = threading.Event()
+        finished = threading.Event()
+        consumed = asyncio.Event()
+
+        @deco(max_size=size)
+        def gen():
+            try:
+                for i in range(10000):
+                    if i == size + 1:
+                        filled.set()
+                    yield i
+            finally:
+                finished.set()
+
+        wrapper = gen()
+
+        async def consume():
+            async with wrapper:
+                async for _ in wrapper:
+                    consumed.set()
+                    await asyncio.Event().wait()
+
+        task = asyncio.create_task(consume())
+        await asyncio.wait_for(consumed.wait(), 5)
+        assert await asyncio.to_thread(filled.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        assert finished.is_set(), "generator finally did not run before exit"

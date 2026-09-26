@@ -379,9 +379,10 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         exc_val: Any,
         exc_tb: Any,
     ) -> None:
-        if self.closed:
-            return
-
+        # Always wait for the generator thread. A finalizer of the
+        # iterator proxy can start close() before this point, and then
+        # only the wait below guarantees that the generator finally
+        # block has run when the block exits.
         await self.close()
 
 

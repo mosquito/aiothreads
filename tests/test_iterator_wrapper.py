@@ -1,6 +1,8 @@
 import asyncio
+import gc
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from queue import Empty as QueueEmpty
 
@@ -757,3 +759,68 @@ async def test_exact_sequence_and_terminal_exception(deco, size):
 
     for _ in range(5):
         await asyncio.wait_for(asyncio.gather(*(consume() for _ in range(8))), 10)
+
+
+class _ClosedExecutor(ThreadPoolExecutor):
+    """Executor that refuses new work, as a pool does after shutdown."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        raise RuntimeError("Pool is shutdown")
+
+
+async def test_wait_closed_after_generator_finished_skips_executor(
+    iterator_decorator,
+):
+    """close() after full consumption must not use the default executor."""
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        yield from range(3)
+
+    wrapper = gen()
+    assert [item async for item in wrapper] == [0, 1, 2]
+
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(_ClosedExecutor())
+    try:
+        await asyncio.wait_for(wrapper.close(), timeout=5)
+    finally:
+        loop.set_default_executor(ThreadPoolExecutor())
+
+
+async def test_close_discarded_task_retrieves_exception(iterator_decorator):
+    """A discarded close() task must not report an unretrieved exception."""
+    started = threading.Event()
+    release = threading.Event()
+    unhandled = []
+
+    @iterator_decorator(max_size=1)
+    def gen():
+        started.set()
+        release.wait(timeout=5)
+        yield 1
+
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(lambda _, context: unhandled.append(context))
+
+    wrapper = gen()
+    iterator = wrapper.__aiter__()
+    started.wait(timeout=5)
+
+    loop.set_default_executor(_ClosedExecutor())
+    try:
+        with pytest.raises(RuntimeError):
+            await wrapper.close()
+
+        # Discard the task exactly as the proxy finalizer does.
+        wrapper.close()
+        await asyncio.sleep(0.1)
+        gc.collect()
+        await asyncio.sleep(0.1)
+    finally:
+        release.set()
+        loop.set_default_executor(ThreadPoolExecutor())
+
+    del iterator
+    await asyncio.wait_for(wrapper.close(), timeout=5)
+    assert unhandled == []

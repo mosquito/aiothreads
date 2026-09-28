@@ -25,6 +25,12 @@ from weakref import finalize
 from .types import P, T
 
 
+def _retrieve_exception(future: "asyncio.Future[Any]") -> None:
+    """Mark the exception of a discarded future as retrieved."""
+    if not future.cancelled():
+        future.exception()
+
+
 class _ImmediateAwaitable:
     """Awaitable that resolves immediately without being a coroutine.
 
@@ -358,25 +364,37 @@ class IteratorWrapper(Generic[P, T], AsyncIterator):
         self.__channel.close()
         coro = self.wait_closed()
         try:
-            return asyncio.ensure_future(coro)
+            task = asyncio.ensure_future(coro)
         except RuntimeError:
             # GC finalizer may call close() from a non-event-loop thread
             # where ensure_future fails. Close the abandoned coroutine and
             # fall back to scheduling cleanup via call_soon_threadsafe.
             coro.close()
             try:
-                self.loop.call_soon_threadsafe(
-                    lambda: asyncio.ensure_future(self.wait_closed()),
-                )
+                self.loop.call_soon_threadsafe(self.__schedule_wait_closed)
             except (RuntimeError, AttributeError):
                 pass
             return _ImmediateAwaitable()
 
+        # A finalizer discards the returned task. Retrieve its exception
+        # there, so that asyncio does not report it as never retrieved.
+        task.add_done_callback(_retrieve_exception)
+        return task
+
+    def __schedule_wait_closed(self) -> None:
+        task = asyncio.ensure_future(self.wait_closed())
+        task.add_done_callback(_retrieve_exception)
+
     async def wait_closed(self) -> None:
         if self.__gen_task is None:
             return
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.__close_event.wait)
+        if not self.__close_event.is_set():
+            # The generator thread sets the event when it exits. Wait in
+            # a thread only while the generator still runs: the default
+            # executor can already be shut down when a finalizer calls
+            # close() after the generator has finished.
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self.__close_event.wait)
         await asyncio.gather(self.__gen_task, return_exceptions=True)
 
     def _run(self) -> Any:
